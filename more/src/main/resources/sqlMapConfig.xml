@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN" "mybatis-3-config.dtd">
+
+<configuration>
+	<!-- - - - - - - -映射文件路径- - - - - - -->
+	<mappers>
+		<!-- 公共 -->
+		<mapper resource="code/model/sql/UserInfoMapper.xml" />
+	</mappers>
+</configuration>
