@@ -11,10 +11,14 @@ import java.util.Properties;
  */
 public class PropertiesUtil {
 
-	private static Properties properties = null;
+	private static Properties configProperties = null;
+	private static Properties jdbcProperties = null;
+	private static Properties ftpProperties = null;
 	static {
 		try {
-			properties = PropertiesUtil.load("config.properties");
+			configProperties = PropertiesUtil.load("config.properties");
+			jdbcProperties = PropertiesUtil.load("jdbc.properties");
+			ftpProperties = PropertiesUtil.load("ftp.properties");
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -27,10 +31,30 @@ public class PropertiesUtil {
 		return properties;
 	}
 
-	public static String getProperty(String pName) {
+	public static String getCofigProperty(String pName) {
 		String value = "";
 		try {
-			value = (String) properties.get(pName);
+			value = (String) configProperties.get(pName);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return value;
+	}
+
+	public static String getJDBCProperty(String pName) {
+		String value = "";
+		try {
+			value = (String) jdbcProperties.get(pName);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return value;
+	}
+
+	public static String getFTPProperty(String pName) {
+		String value = "";
+		try {
+			value = (String) ftpProperties.get(pName);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
