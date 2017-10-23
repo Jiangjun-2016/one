@@ -7,13 +7,15 @@ import java.io.InputStream;
 import java.util.Properties;
 
 /**
- * 读取配置文件
- */
-public class PropertiesUtil {
+ * @author fxf
+ * @create 2017-10-23 14:30
+ **/
 
+public class PropertiesUtil {
 	private static Properties configProperties = null;
 	private static Properties jdbcProperties = null;
 	private static Properties ftpProperties = null;
+
 	static {
 		try {
 			configProperties = PropertiesUtil.load("config.properties");
@@ -71,5 +73,4 @@ public class PropertiesUtil {
 			e.printStackTrace();
 		}
 	}
-
 }
