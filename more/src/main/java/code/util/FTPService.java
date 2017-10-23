@@ -22,24 +22,19 @@ public class FTPService {
 	private Logger logger = LoggerFactory.getLogger(FTPService.class);
 
 	/**
-	 * @param @param type @param @param subfolder @param @param
-	 *               fileName @param @param data @param @return 设定文件
-	 * @return String 返回文件保存在ftp服务器上的URL地址
-	 * @throws
-	 * @Title: ftpUpLload
-	 * @Description: 通过类别上传文件, 可以指定文件名和子文件夹
+	 * @Description: 上传文件, 可以指定文件名和子文件夹
+	 * @return String 返回文件在ftp服务器上的URL地址
 	 */
-	public String ftpUpLoad(String type, String subfolder, String fileName, byte[] data) {
+	public String ftpUpLoad(String subfolder, String fileName, byte[] data) {
 		try {
 			// 本地字符编码
 			String LOCAL_CHARSET = "GBK";
 			// FTP协议里面，规定文件名编码为iso-8859-1
 			String SERVER_CHARSET = "ISO-8859-1";
-
-			String ip = PropertiesUtil.getCofigProperty("ip");
-			String userName = PropertiesUtil.getCofigProperty("username");
-			String passWord = PropertiesUtil.getCofigProperty("password");
-			String path = PropertiesUtil.getCofigProperty("path");
+			String ip = PropertiesUtil.getFTPProperty("ip");
+			String userName = PropertiesUtil.getFTPProperty("username");
+			String passWord = PropertiesUtil.getFTPProperty("password");
+			String path = PropertiesUtil.getFTPProperty("path");//存放根目录 /ftptest
 
 			if (subfolder != null && !subfolder.equals("")) {
 				path += "/" + subfolder;
@@ -53,27 +48,23 @@ public class FTPService {
 				LOCAL_CHARSET = "UTF-8";
 			}
 			ftp.setControlEncoding(LOCAL_CHARSET);
-
-			// ftp.changeWorkingDirectory(path);
+			//在ftp服务器上创建目录
 			changeFtpWorkDir(ftp, path);
-			System.out.println(FTPReply.isPositiveCompletion(ftp.getReplyCode()));
 			ByteArrayInputStream is = new ByteArrayInputStream(data);
 			ftp.setFileType(FTPClient.BINARY_FILE_TYPE);
 			String s = new String(fileName.getBytes(LOCAL_CHARSET), SERVER_CHARSET);
-			// String s = new
-			// String(fileName.getBytes(SERVER_CHARSET),LOCAL_CHARSET);
-			System.out.println("--" + ftp.storeFile(s, is));
+			ftp.storeFile(s, is);
 			is.close();
 			ftp.disconnect();
-			// String retUrl="ftp://"+ip+path+"/"+fileName;
 			// 如果不转码，path中的中文返回到前端会变成乱码
 			path = new String(path.getBytes("iso-8859-1"), "UTF-8");
 			String retUrl = path + "/" + fileName;
 			return retUrl;
 		} catch (Exception e) {
+			logger.error("error",e);
 			e.printStackTrace();
 		}
-		return null;
+		return "error";
 	}
 
 	/**
