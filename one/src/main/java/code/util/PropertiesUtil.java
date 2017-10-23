@@ -31,7 +31,7 @@ public class PropertiesUtil {
 		return properties;
 	}
 
-	public static String getCofigProperty(String pName) {
+	public static String getConfigProperty(String pName) {
 		String value = "";
 		try {
 			value = (String) configProperties.get(pName);
