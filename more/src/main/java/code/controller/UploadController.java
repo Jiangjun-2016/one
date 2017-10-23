@@ -1,6 +1,8 @@
 package code.controller;
 
+import code.vo.FTPVO;
 import code.util.FTPService;
+import code.util.PropertiesUtil;
 import net.sf.json.JSONObject;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
@@ -16,11 +18,12 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 
 @Controller
-@RequestMapping("doUserService")
+@RequestMapping("doFTPService")
 public class UploadController {
 
 	private Logger logger = LoggerFactory.getLogger(UploadController.class);
@@ -28,6 +31,36 @@ public class UploadController {
 	@Resource
 	private FTPService ftpService;
 
+
+	/**
+	 * 下载ftp文件
+	 * @param request
+	 */
+	@RequestMapping("downloadFile")
+	public void ftpDownloadFile(HttpServletRequest request) {
+		String eventId = request.getParameter("eventId");
+		String fileName = request.getParameter("fileName");
+		String ip = PropertiesUtil.getFTPProperty("ip");
+		String userName = PropertiesUtil.getFTPProperty("username");
+		String passWord = PropertiesUtil.getFTPProperty("password");
+		String ftpPath = PropertiesUtil.getFTPProperty("path");
+		String localFilePath = PropertiesUtil.getFTPProperty("localFilePath");
+		FTPVO fileBean = new FTPVO();
+		fileBean.setFtpIp(ip);
+		fileBean.setUsername(userName);
+		fileBean.setPassword(passWord);
+		fileBean.setFileName(fileName);
+		fileBean.setFtpDirPath(ftpPath);
+		fileBean.setId(eventId);
+		if (validateParam(eventId)) {
+			try {
+				File localFile = ftpService.ftpDownloadFile(fileBean.getFtpIp(), fileBean.getUsername(), fileBean.getPassword(),
+						fileBean.getFtpDirPath(), fileBean.getFileName(), localFilePath);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+	}
 	/**
 	 * 上传ftp服务
 	 */

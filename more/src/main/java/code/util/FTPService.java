@@ -12,9 +12,6 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.sql.Timestamp;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 
 @Service
 public class FTPService {
@@ -26,6 +23,7 @@ public class FTPService {
 	 * @return String 返回文件在ftp服务器上的URL地址
 	 */
 	public String ftpUpLoad(String subfolder, String fileName, byte[] data) {
+		logger.info("上传路劲+上传文件名"+subfolder+" "+fileName);
 		try {
 			// 本地字符编码
 			String LOCAL_CHARSET = "GBK";
@@ -104,10 +102,10 @@ public class FTPService {
 	 * @param fileName：文件名
 	 * @param localPath：本地目录
 	 */
-	private File ftpDownloadFile(String ip, String user, String password, String dirPath, String fileName,
+	public File ftpDownloadFile(String ip, String user, String password, String dirPath, String fileName,
 								 String localPath) {
 		try {
-
+			logger.info("ftp路劲+文件名+本地路劲"+dirPath+" "+fileName+" "+localPath);
 			FTPClient ftpClient = new FTPClient();
 			ftpClient.connect(ip);
 			ftpClient.login(user, password);
@@ -116,36 +114,16 @@ public class FTPService {
 			String remoteFilePath = dirPath + "/" + fileName;
 			// 因windows ftp服务器，这里需要硬转码否则中文文件名的文档下载不下来
 			String chanFilePath = new String(remoteFilePath.getBytes("GBK"), "ISO-8859-1");
-			System.out.println(remoteFilePath);
-			System.out.println(chanFilePath);
 			FileOutputStream is = new FileOutputStream(localFile);
 			ftpClient.retrieveFile(chanFilePath, is);
 			is.close();
 			ftpClient.logout();
 			ftpClient.disconnect();
 			return localFile;
-		} catch (IOException ex) {
-			ex.printStackTrace();
-			throw new RuntimeException(ex);
-		}
-	}
-
-	/**
-	 * @param @param ts @param @return 设定文件
-	 * @return String 返回类型
-	 * @throws
-	 * @Title: timestamp2Str
-	 * @Description: 将timestamp转换成字符串
-	 */
-	public String timestamp2Str(Timestamp ts) {
-		String tsStr = "";
-		DateFormat sdf = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
-		try {
-			tsStr = sdf.format(ts);
-		} catch (Exception e) {
+		} catch (IOException e) {
+			logger.error("error",e);
 			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
-		return tsStr;
 	}
-
 }
