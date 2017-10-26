@@ -4,6 +4,7 @@ import org.apache.poi.hssf.usermodel.*;
 import org.apache.poi.hssf.util.HSSFColor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFCell;
+import org.apache.poi.xssf.usermodel.XSSFFormulaEvaluator;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.File;
@@ -24,9 +25,10 @@ public class CreatAndReadExcel {
 
 	/**
 	 * 创建Excel文件
-	 *
+	 * <p>
 	 * XSSFWork used for .xslx (>=2007),
 	 * HSSWorkbook for 03 .xsl
+	 *
 	 * @return
 	 * @throws IOException
 	 */
@@ -95,21 +97,24 @@ public class CreatAndReadExcel {
 	/**
 	 * 读取excel
 	 *
-	 * @param fileName
+	 * @param fileNamePath
 	 * @return 行<列>
 	 * @throws IOException
 	 */
 
-	public static List<List<Object>> readExcel(String fileName) throws IOException {
-		File file = new File(fileName);
+	public static List<List<Object>> readExcel(String fileNamePath, int index) throws IOException {
+		File file = new File(fileNamePath);
 		Workbook wb = null;
-		if (fileName.endsWith(".xlsx")) {// 2007
+		FormulaEvaluator formulaEvaluator = null;
+		if (fileNamePath.endsWith(".xlsx")) {// 2007
 			wb = new XSSFWorkbook(new FileInputStream(file));// 创建 一个excel文档对象
-		} else if (fileName.endsWith(".xls")) {// 2003
+			formulaEvaluator = new XSSFFormulaEvaluator((XSSFWorkbook) wb);
+		} else if (fileNamePath.endsWith(".xls")) {// 2003
 			wb = new HSSFWorkbook(new FileInputStream(file));// 创建 一个excel文档对象
+			formulaEvaluator = new XSSFFormulaEvaluator((XSSFWorkbook) wb);
 		}
 
-		Sheet sheet = wb.getSheetAt(0);// 读取第一个sheet页表格内容
+		Sheet sheet = wb.getSheetAt(index);// 读取第一个sheet页表格内容
 		Object value = null;
 		Row row = null;
 		Cell cell = null;
@@ -135,6 +140,9 @@ public class CreatAndReadExcel {
 				DecimalFormat nf = new DecimalFormat("0.00");// 格式化数字
 				SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");// 格式化日期字符串
 				switch (cell.getCellType()) {
+					case XSSFCell.CELL_TYPE_FORMULA:// 公式
+						value = formulaEvaluator.evaluate(cell).getNumberValue();
+						break;
 					case XSSFCell.CELL_TYPE_STRING:// 字符串——String type
 						value = cell.getStringCellValue();
 						break;
@@ -159,7 +167,7 @@ public class CreatAndReadExcel {
 				if (value == null || "".equals(value)) {
 					continue;
 				}
-				cellList.add(value);
+				cellList.add(value+" ");
 			}
 			rowlist.add(cellList);
 		}
