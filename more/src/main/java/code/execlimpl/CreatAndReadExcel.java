@@ -25,11 +25,13 @@ public class CreatAndReadExcel {
 	/**
 	 * 创建Excel文件
 	 *
+	 * XSSFWork used for .xslx (>=2007),
+	 * HSSWorkbook for 03 .xsl
 	 * @return
 	 * @throws IOException
 	 */
 	public static void creatExcel(String excelPath, String version) throws IOException {
-		// XSSFWork used for .xslx (>=2007), HSSWorkbook for 03 .xsl
+
 		Workbook workbook = null;
 		if (version.equals("2007")) {
 			workbook = new XSSFWorkbook();// 创建 一个excel文档对象
