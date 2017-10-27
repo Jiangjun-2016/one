@@ -167,7 +167,86 @@ public class CreatAndReadExcel {
 				if (value == null || "".equals(value)) {
 					continue;
 				}
-				cellList.add(value+" ");
+				cellList.add(value + " ");
+			}
+			rowlist.add(cellList);
+		}
+		return rowlist;
+	}
+
+	/**
+	 * 读取excel
+	 *
+	 * @param fileNamePath
+	 * rowNo行数
+	 * cellNo列数
+	 * @return 行<列>
+	 * @throws IOException
+	 */
+
+	public static List<List<Object>> readExcel(String fileNamePath, int index, int rowNo, int cellNo) throws IOException {
+		File file = new File(fileNamePath);
+		Workbook wb = null;
+		FormulaEvaluator formulaEvaluator = null;
+		if (fileNamePath.endsWith(".xlsx")) {// 2007
+			wb = new XSSFWorkbook(new FileInputStream(file));// 创建 一个excel文档对象
+			formulaEvaluator = new XSSFFormulaEvaluator((XSSFWorkbook) wb);
+		} else if (fileNamePath.endsWith(".xls")) {// 2003
+			wb = new HSSFWorkbook(new FileInputStream(file));// 创建 一个excel文档对象
+			formulaEvaluator = new XSSFFormulaEvaluator((XSSFWorkbook) wb);
+		}
+
+		Sheet sheet = wb.getSheetAt(index);// 读取第一个sheet页表格内容
+		Object value = null;
+		Row row = null;
+		Cell cell = null;
+		// 行
+		List<List<Object>> rowlist = new LinkedList<List<Object>>();
+		for (int i = 0; i <= rowNo; i++) {
+			row = sheet.getRow(i);
+			if (row == null) {
+				continue;
+			}
+			// 列
+			List<Object> cellList = new LinkedList<Object>();
+			for (int j = 0; j <= cellNo; j++) {
+				cell = row.getCell(j);
+				if (cell == null) {
+					continue;
+				}
+
+				DecimalFormat df = new DecimalFormat("0");// 格式化 number String
+				DecimalFormat nf = new DecimalFormat("0.00");// 格式化数字
+				SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");// 格式化日期字符串
+				switch (cell.getCellType()) {
+					case XSSFCell.CELL_TYPE_FORMULA:// 公式
+						value = formulaEvaluator.evaluate(cell).getNumberValue();
+						break;
+					case XSSFCell.CELL_TYPE_STRING:// 字符串——String type
+						value = cell.getStringCellValue();
+						break;
+					case XSSFCell.CELL_TYPE_NUMERIC:// 数字——Number type
+						if ("@".equals(cell.getCellStyle().getDataFormatString())) {
+							value = df.format(cell.getNumericCellValue());
+						} else if ("General".equals(cell.getCellStyle().getDataFormatString())) {
+							value = nf.format(cell.getNumericCellValue());
+						} else {
+							value = sdf.format(HSSFDateUtil.getJavaDate(cell.getNumericCellValue()));
+						}
+						break;
+					case XSSFCell.CELL_TYPE_BOOLEAN:// boolean——Boolean type
+						value = cell.getBooleanCellValue();
+						break;
+					case XSSFCell.CELL_TYPE_BLANK:// 空白——Blank type
+						value = "";
+						break;
+					default:// default type
+						value = cell.toString();
+				}
+				if (value == null || "".equals(value)) {
+					continue;
+				}
+				cellList.add(value + " ");
 			}
 			rowlist.add(cellList);
 		}

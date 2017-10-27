@@ -2,6 +2,7 @@ package testcode;
 
 import code.execlimpl.CreatAndReadExcel;
 import code.execlimpl.impl.YWGXZDGExcelImpl;
+import code.execlimpl.impl.YXFYTZExcelImpl;
 
 import java.util.List;
 
@@ -31,7 +32,8 @@ public class TestExcel {
 		String filePath = "D:\\lhx\\2017年08月业务贡献值表\\业务贡献值底稿.xlsx";
 		int index = 0;//主表
 		YWGXZDGExcelImpl ywgxzdgExcel = new YWGXZDGExcelImpl();
-		List<List<Object>> ywgxzdgListMaster = ywgxzdgExcel.readExcelMaster(filePath,index);
+		YXFYTZExcelImpl yxfytzExcel = new YXFYTZExcelImpl();
+		List<List<Object>> ywgxzdgListMaster = yxfytzExcel.readExcelMaster(demo1,10,10);
 		for(List<Object> list:ywgxzdgListMaster){
 			for (Object o:list){
 				System.out.printf(o.toString());
