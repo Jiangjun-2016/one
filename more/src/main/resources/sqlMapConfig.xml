@@ -5,6 +5,6 @@
 	<!-- - - - - - - -映射文件路径- - - - - - -->
 	<mappers>
 		<!-- 公共 -->
-		<mapper resource="code/model/sql/UserInfoMapper.xml" />
+		<mapper resource="codespring/model/sql/UserInfoMapper.xml" />
 	</mappers>
 </configuration>

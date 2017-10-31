@@ -1,8 +1,8 @@
-package code.controller;
+package codespring.controller;
 
-import code.vo.FTPVO;
-import code.util.FTPService;
-import code.util.PropertiesUtil;
+import codespring.vo.FTPVO;
+import codespring.util.FTPService;
+import codespring.util.PropertiesUtil;
 import net.sf.json.JSONObject;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;

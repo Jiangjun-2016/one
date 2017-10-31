@@ -1,6 +1,6 @@
 package testcode;
 
-import code.controller.UploadController;
+import codespring.controller.UploadController;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;

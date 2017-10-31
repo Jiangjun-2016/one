@@ -1,4 +1,4 @@
-package code.vo;
+package codespring.vo;
 
 public class FTPVO {
 	

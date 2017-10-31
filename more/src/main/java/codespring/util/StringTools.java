@@ -1,4 +1,4 @@
-package code.util;
+package codespring.util;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;

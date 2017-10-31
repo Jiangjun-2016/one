@@ -200,7 +200,7 @@
             <resource>
                 <directory>src/main/java</directory>
                 <includes>
-                    <include>code/model/sql/*.xml</include>
+                    <include>codespring/model/sql/*.xml</include>
                 </includes>
             </resource>
         </resources>

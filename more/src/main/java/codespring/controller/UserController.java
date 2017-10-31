@@ -1,4 +1,4 @@
-package code.controller;
+package codespring.controller;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
@@ -10,8 +10,8 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
-import code.model.UserEntity;
-import code.service.UserService;
+import codespring.model.UserEntity;
+import codespring.service.UserService;
 
 @Controller
 @RequestMapping("doUserService")

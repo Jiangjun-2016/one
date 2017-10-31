@@ -1,6 +1,6 @@
-package code.dao;
+package codespring.dao;
 
-import code.model.UserEntity;
+import codespring.model.UserEntity;
 
 public interface UserMapper {
 

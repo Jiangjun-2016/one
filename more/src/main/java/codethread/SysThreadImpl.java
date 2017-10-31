@@ -1,4 +1,4 @@
-package code.threadimpl;
+package codethread;
 
 public class SysThreadImpl {
 

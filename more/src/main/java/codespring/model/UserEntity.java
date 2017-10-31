@@ -1,4 +1,4 @@
-package code.model;
+package codespring.model;
 
 import java.io.Serializable;
 

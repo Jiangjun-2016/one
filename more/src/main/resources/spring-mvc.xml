@@ -13,7 +13,7 @@ http://www.springframework.org/schema/mvc http://www.springframework.org/schema/
 
 	<mvc:annotation-driven />
 	<!-- controller包(自动注入) -->
-	<context:component-scan base-package="code.*" />
+	<context:component-scan base-package="codespring.*" />
 
 	<!-- 避免IE执行AJAX时,返回JSON出现下载文件 -->
 	<bean id="mappingJacksonHttpMessageConverter"
