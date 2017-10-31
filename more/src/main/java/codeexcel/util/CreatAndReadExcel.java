@@ -17,6 +17,8 @@ import java.util.LinkedList;
 import java.util.List;
 
 /**
+ * poi 操纵Excel表格
+ *
  * @author fxf
  * @create 2017-10-24 16:19
  **/
@@ -177,9 +179,8 @@ public class CreatAndReadExcel {
 	/**
 	 * 读取excel
 	 *
-	 * @param fileNamePath
-	 * rowNo行数
-	 * cellNo列数
+	 * @param fileNamePath rowNo行数
+	 *                     cellNo列数
 	 * @return 行<列>
 	 * @throws IOException
 	 */
