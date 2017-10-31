@@ -8,26 +8,27 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * @author fxf
  * 营销费用台账
+ *
+ * @author fxf
  * @create 2017-10-27 13:28
  **/
 
-public class YXFYTZExcelImpl {
+public class MarketingExpenseLedgerImpl {
 
-	private Logger logger = LoggerFactory.getLogger(YXFYTZExcelImpl.class);
+	private Logger logger = LoggerFactory.getLogger(MarketingExpenseLedgerImpl.class);
 
 	private CreatAndReadExcel creatAndReadExcel = new CreatAndReadExcel();
 
 	/**
 	 * 台账sheet
 	 */
-	public List<List<Object>> readExcelMaster(String fileNamePath,int rowNo,int cellNo) {
+	public List<List<Object>> readExcelMaster(String fileNamePath, int rowNo, int cellNo) {
 		List<List<Object>> listExcel = null;
 		try {
-			listExcel = creatAndReadExcel.readExcel(fileNamePath, 0,2,2);
+			listExcel = creatAndReadExcel.readExcel(fileNamePath, 0, 2, 2);
 		} catch (Exception e) {
-			logger.error("error",e);
+			logger.error("error", e);
 			e.printStackTrace();
 		}
 		return listExcel;
@@ -41,7 +42,7 @@ public class YXFYTZExcelImpl {
 		try {
 			listExcel = creatAndReadExcel.readExcel(fileNamePath, 1);
 		} catch (IOException e) {
-			logger.error("error",e);
+			logger.error("error", e);
 			e.printStackTrace();
 		}
 		return listExcel;

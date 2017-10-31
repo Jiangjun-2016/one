@@ -8,7 +8,7 @@ import java.io.Serializable;
  * @create 2017-10-27 13:29
  **/
 
-public class YXFYTZModel implements Serializable {
+public class MarketingExpenseLedgerModel implements Serializable {
 
 	private static final long serialVersionUID = -2282781002796095977L;
 
