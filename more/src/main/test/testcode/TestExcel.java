@@ -1,5 +1,9 @@
 package testcode;
 
+import codeexcel.impl.BusinessContributionValueManuscriptImpl;
+import codeexcel.impl.MarketingExpenseLedgerImpl;
+import codeexcel.util.CreatAndReadExcel;
+
 import java.util.List;
 
 /**
@@ -27,11 +31,11 @@ public class TestExcel {
 
 		String filePath = "D:\\lhx\\2017年08月业务贡献值表\\业务贡献值底稿.xlsx";
 		int index = 0;//主表
-		YWGXZDGExcelImpl ywgxzdgExcel = new YWGXZDGExcelImpl();
-		YXFYTZExcelImpl yxfytzExcel = new YXFYTZExcelImpl();
-		List<List<Object>> ywgxzdgListMaster = yxfytzExcel.readExcelMaster(demo1,10,10);
-		for(List<Object> list:ywgxzdgListMaster){
-			for (Object o:list){
+		MarketingExpenseLedgerImpl ywgxzdgExcel = new MarketingExpenseLedgerImpl();
+		BusinessContributionValueManuscriptImpl yxfytzExcel = new BusinessContributionValueManuscriptImpl();
+		List<List<Object>> ywgxzdgListMaster = yxfytzExcel.readExcelMaster(demo1, 0);
+		for (List<Object> list : ywgxzdgListMaster) {
+			for (Object o : list) {
 				System.out.printf(o.toString());
 			}
 			System.out.println("");
