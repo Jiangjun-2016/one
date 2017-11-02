@@ -16,8 +16,12 @@ public class UserService {
 	@Resource
 	private UserMapper userMapper;
 
+	@Resource
+	private WebServerClient webServerClient;
+
 	public UserEntity getUser(String id) {
 
+		webServerClient.addByFtpJson("solr");
 		logger.info(id);
 		UserEntity user = userMapper.selectByPrimaryKey(id);
 		return user;

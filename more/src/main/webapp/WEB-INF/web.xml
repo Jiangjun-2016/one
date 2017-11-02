@@ -7,7 +7,8 @@
         <param-name>contextConfigLocation</param-name>
         <param-value>
             classpath:spring-mybatis.xml,
-            classpath:spring-webservice-server.xml
+            classpath:spring-webservice-server.xml,
+            classpath:spring-webservice-client.xml
         </param-value>
     </context-param>
     <context-param>

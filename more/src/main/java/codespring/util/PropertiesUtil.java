@@ -12,13 +12,13 @@ import java.util.Properties;
  **/
 
 public class PropertiesUtil {
-	private static Properties configProperties = null;
+	private static Properties webserviceProperties = null;
 	private static Properties jdbcProperties = null;
 	private static Properties ftpProperties = null;
 
 	static {
 		try {
-			configProperties = PropertiesUtil.load("config.properties");
+			webserviceProperties = PropertiesUtil.load("webservice.properties");
 			jdbcProperties = PropertiesUtil.load("jdbc.properties");
 			ftpProperties = PropertiesUtil.load("ftp.properties");
 		} catch (IOException e) {
@@ -33,10 +33,10 @@ public class PropertiesUtil {
 		return properties;
 	}
 
-	public static String getConfigProperty(String pName) {
+	public static String getWebServicesProperty(String pName) {
 		String value = "";
 		try {
-			value = (String) configProperties.get(pName);
+			value = (String) webserviceProperties.get(pName);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
