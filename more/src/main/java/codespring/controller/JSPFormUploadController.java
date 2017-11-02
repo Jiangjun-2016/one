@@ -24,9 +24,9 @@ import java.io.InputStream;
 
 @Controller
 @RequestMapping("doFTPService")
-public class UploadController {
+public class JSPFormUploadController {
 
-	private Logger logger = LoggerFactory.getLogger(UploadController.class);
+	private Logger logger = LoggerFactory.getLogger(JSPFormUploadController.class);
 
 	@Resource
 	private FTPService ftpService;

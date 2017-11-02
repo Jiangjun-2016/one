@@ -24,7 +24,7 @@
 <title>Insert title here</title>
 </head>
 <body>
-	<form action="doSolrService/upload/uploadfile.do" name="" class="" id="" method="post" enctype="multipart/form-data" >
+	<form action="doFTPService/upload/uploadfile.do" name="" class="" id="" method="post" enctype="multipart/form-data" >
 	     请选择上传的文件：<input type="file" id="" name="file"><br>
      <input type="submit" value="提交"><br>
      <input type="hidden" name="fileUploadUrl" value="dafgafaga">

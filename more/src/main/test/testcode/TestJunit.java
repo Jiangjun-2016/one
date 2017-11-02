@@ -1,6 +1,6 @@
 package testcode;
 
-import codespring.controller.UploadController;
+import codespring.controller.JSPFormUploadController;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +19,7 @@ public class TestJunit {
 
 	// 注入Controller
 	@Autowired
-	private UploadController uploadController;
+	private JSPFormUploadController uploadController;
 
 	// 执行测试方法之前初始化模拟request,response
 	@org.junit.Before
