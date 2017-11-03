@@ -1,5 +1,7 @@
 package codespring.controller;
 
+import codespring.util.RequestParamsUtil;
+import net.sf.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -29,6 +31,7 @@ public class WebUploadConntroller {
 	@RequestMapping(value = "webUploadFile", method = RequestMethod.POST)
 	public String webUploadFile(@RequestParam(value = "file", required = false) MultipartFile file, HttpServletRequest request,
 								ModelMap model, HttpServletResponse res) throws IOException {
+		JSONObject jsonObject = RequestParamsUtil.getSpringMultipartFormParameter(request);
 		String fileName = file.getOriginalFilename();//上传文件名称
 		try {
 

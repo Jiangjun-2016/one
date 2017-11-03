@@ -1,6 +1,5 @@
 /*********************************WebUpload 单文件上传 begin*****************************************/
 $(function () {
-    alert("***");
     var $list = $("#thelist");
     var uploader;// 实例化
     uploader = WebUploader.create({
