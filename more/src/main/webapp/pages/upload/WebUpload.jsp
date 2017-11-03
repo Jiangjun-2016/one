@@ -11,6 +11,7 @@
     <link href="../../js/webuploader-0.1.5/dist/webuploader.css" rel="stylesheet" type="text/css"/>
     <script type="text/javascript" src="../../js/webuploader-0.1.5/dist/webuploader.js"></script>
     <script type="text/javascript" src="../../js/jquery-2.1.4/jquery.min.js"></script>
+    <script type="text/javascript" src="../../pages/upload/js/webupload.js"></script>
 </head>
 <body>
 <!-- 2.创建页面元素 -->
