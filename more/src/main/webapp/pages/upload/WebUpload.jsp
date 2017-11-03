@@ -11,25 +11,28 @@
     <link href="../../js/webuploader-0.1.5/dist/webuploader.css" rel="stylesheet" type="text/css"/>
     <script type="text/javascript" src="../../js/webuploader-0.1.5/dist/webuploader.js"></script>
     <script type="text/javascript" src="../../js/jquery-2.1.4/jquery.min.js"></script>
+    <!-- 3.添加js代码 -->
     <script type="text/javascript" src="../../pages/upload/js/webupload.js"></script>
 </head>
 <body>
 <!-- 2.创建页面元素 -->
-<div id="upload">
-    <div id="filePicker">文件上传</div>
+<div id="uploader" class="wu-example">
+    <!--用来存放文件信息-->
+    <div id="thelist" class="uploader-list"></div>
+    <div class="btns">
+        <div id="attach"></div>
+        <input type="button" value="上传" id="upload"/>
+    </div>
 </div>
 
 
-<!-- 3.添加js代码 -->
-<script type="text/javascript">
-    var uploader = WebUploader.create(
-            {
-                swf:"../js/webuploader-0.1.5/dist/Uploader.swf",
-                server:"${pageContext.request.contextPath }/FileUploadServlet",
-                pick:"#filePicker",
-                auto:true
-            }
-    );
-</script>
+<div id="uploader1" class="wu-example">
+    <!--用来存放文件信息-->
+    <div id="thelist1" class="uploader-list"></div>
+    <div class="btns">
+        <div id="multi"></div>
+        <input type="button" value="上传" id="multiUpload"/>
+    </div>
+</div>
 </body>
 </html>
