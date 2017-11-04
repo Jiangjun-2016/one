@@ -34,7 +34,7 @@ public class WebUploadConntroller {
 		JSONObject jsonObject = RequestParamsUtil.getSpringMultipartFormParameter(request);
 		String fileName = file.getOriginalFilename();//上传文件名称
 		try {
-
+			System.out.printf(fileName);
 		} catch (Exception e) {
 			logger.error("error", e);
 			e.printStackTrace();

@@ -86,7 +86,7 @@ jQuery(function () {
 
         chunked: true,
 
-        server: '/image/UpImage',
+        server: 'doWebUploadService/webUploadFile',
         deleteServer: '/image/DelImage',
         fileNumLimit: 10,
         fileSizeLimit: 20 * 1024 * 1024,    // 200 M
@@ -180,11 +180,11 @@ jQuery(function () {
         });
 
         $li.on('mouseenter', function () {
-            $btns.stop().animate({ height: 30 });
+            $btns.stop().animate({height: 30});
         });
 
         $li.on('mouseleave', function () {
-            $btns.stop().animate({ height: 0 });
+            $btns.stop().animate({height: 0});
         });
 
         $btns.on('click', 'span', function () {
@@ -346,7 +346,7 @@ jQuery(function () {
             case 'finish':
                 stats = uploader.getStats();
                 // alert(stats);
-                console.log("状态",stats)
+                console.log("状态", stats)
                 if (stats.successNum) {
                     // alert('上传成功');
                 } else {
@@ -447,18 +447,17 @@ jQuery(function () {
     updateTotalProgress();
 
     // 文件上传成功，给item添加成功class, 用样式标记上传成功。
-    uploader.on('uploadSuccess', function( file,data ) {
+    uploader.on('uploadSuccess', function (file, data) {
         // var uploaderId = '#rt_' + file.source.ruid;
         // console.log(uploaderId);
         console.log(file.id);
         console.log(data);
         var $btns = null;
-        if(data.Code==1)
-        {
-            $( '#'+file.id ).addClass('upload-state-done');
+        if (data.Code == 1) {
+            $('#' + file.id).addClass('upload-state-done');
 
-            $('#'+file.id).find("img").parent().append('<a href="'+ data.savePath +'" target="_blank"></a>')
-            $('#'+file.id).find(".imgWrap").find("a").append($('#'+file.id).find(".imgWrap").find("img"));
+            $('#' + file.id).find("img").parent().append('<a href="' + data.savePath + '" target="_blank"></a>')
+            $('#' + file.id).find(".imgWrap").find("a").append($('#' + file.id).find(".imgWrap").find("img"));
 
             $btns = $('<div class="file-panel">' +
                 '<span class="cancel">删除</span>' +
@@ -470,12 +469,10 @@ jQuery(function () {
 
                 switch (index) {
                     case 0:
-                        $.post("/image/DelImage",{"savefile":data.savePath},function(rlt){
-                            if(rlt)
-                            {
+                        $.post("/image/DelImage", {"savefile": data.savePath}, function (rlt) {
+                            if (rlt) {
                                 uploader.removeFile(file);
-                            }else
-                            {
+                            } else {
                                 console.log("删除失败");
                             }
                         })
@@ -485,26 +482,25 @@ jQuery(function () {
 
             });
 
-            $( '#'+file.id ).append($btns);
+            $('#' + file.id).append($btns);
 
-            $( '#'+file.id ).on('mouseenter', function () {
-                $btns.stop().animate({ height: 30 });
+            $('#' + file.id).on('mouseenter', function () {
+                $btns.stop().animate({height: 30});
             });
 
-            $( '#'+file.id ).on('mouseleave', function () {
-                $btns.stop().animate({ height: 0 });
+            $('#' + file.id).on('mouseleave', function () {
+                $btns.stop().animate({height: 0});
             });
 
 
         }
-        else if(data.Code==-1)
-        {
-            var $li = $( '#'+file.id ),
+        else if (data.Code == -1) {
+            var $li = $('#' + file.id),
                 $error = $li.find('div.error');
 
             // 避免重复创建
-            if ( !$error.length ) {
-                $error = $('<div class="error"></div>').appendTo( $li );
+            if (!$error.length) {
+                $error = $('<div class="error"></div>').appendTo($li);
             }
             $error.text('上传失败');
         }
@@ -513,19 +509,19 @@ jQuery(function () {
     });
 
     // 文件上传失败，显示上传出错。
-    uploader.on( 'uploadError', function( file ) {
-        var $li = $( '#'+file.id ),
+    uploader.on('uploadError', function (file) {
+        var $li = $('#' + file.id),
             $error = $li.find('div.error');
 
         // 避免重复创建
-        if ( !$error.length ) {
-            $error = $('<div class="error"></div>').appendTo( $li );
+        if (!$error.length) {
+            $error = $('<div class="error"></div>').appendTo($li);
         }
         $error.text('上传失败');
     });
 
     // 完成上传完了，成功或者失败，先删除进度条。
-    uploader.on( 'uploadComplete', function( file ) {
-        $( '#'+file.id ).find('.progress').remove();
+    uploader.on('uploadComplete', function (file) {
+        $('#' + file.id).find('.progress').remove();
     });
 });
