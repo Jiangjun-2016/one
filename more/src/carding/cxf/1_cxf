@@ -1,33 +1,45 @@
+JAXB
+1.Jaxb是JavaEE的规范.全称Java Architecture(建筑) for XML Binding(结合).
+2.可以根据XML Schema产生Java类的技术.JAXB也提供了将XML实例文档反向生成Java对象树的方法，并能将Java对象树的内容重新写到XML实例文档.
+3.JAXB 2.0是JDK 1.6的组成部分。JAXB 2.2.3是JDK 1.7的组成部分。在实际使用不需要引入新的jar.
+4.这意味着你不需要处理甚至不需要知道XML编程技巧就能在Java应用程序中利用平台核心XML数据的灵活性。而且，可以充分利用XML的优势而不用依赖于复杂的XML处理模型如SAX或DOM。JAXB 隐藏了细节并且取消了SAX和DOM中没用的关系——生成的JAXB类仅描述原始模型中定义的关系。其结果是结合了高度可移植Java代码和高度可移植的XML数据。其中这些代码可用来创建灵活、轻便的应用程序和Web服务。
+
+XMLBeans
+1.XMLBeans是一个XML-Java绑定工具，利用它可以很方便地解析XML文档。
+
+JiBX
+1.JiBX 是一个绑定 XML 数据到 Java 对象的框架。JiBX 用一个绑定定义文挡（binding definition document）来定义 XML 数据与 Java 对象转换的规则，这个文挡就是联系 XML 数据与 Java 对象之间的桥梁。
+2.不同于jaxb，jibx使用java字节码enhance技术，而jaxb更多在于源代码生成技术。
+jibx的工作主要在于前期，也就是进行字节码绑定，这一部分基本上都是在编译器完成的。在运行期，不需要任何的配置，由于字节码已经嵌入java类中。
+而jaxb更多在于运行期绑定，通过元数据或者xsd文件进行解析绑定。相对于 jaxb来说，jibx更加的快速以及灵活。不过，前期的编译工作还是需要花费一点时间熟悉
+
+FrontEnt
+1.在CXF的架构中，有一个FrontEnd概念(组件)，实际上这是CXF提供或支持的WebService的编程模型，目前有四种：
+1.1.Annotations：基于CXF自己提供的注解实现WS.
+1.2.Dynamic Clients: 一套可以动态创建client的API，不需要生成client端的stub.
+1.3.JAX-WS：推荐的标准编程模型。
+1.4.Simple：这是一种不使用任何注解，完全依赖反射实现WS的编程模型。
+2.关于数据绑定:
+2.1.对于每一种平台都存在将wsdl中使用xml描述的数据结构映射到本平台组件(类)上的问题，这就是所谓的“数据绑定”。
+2.2.java平台上实现xml和java类互转换的框架或规范有：JAXB、XMLBeans、JiBX等。
+2.3.其中JAX-WS使用JAXB规范做为数据绑定策略，而CXF的默认数据绑定策略也是JAXB.需要特别说明的，数据绑定的过程是高度自动和透明的，因此在初学WS时常常不能理解这一过程是如何进行的，对于CXF来说，我们可以从它的spring配制文件中配制使用何种数据绑定方案。
+2.4.<jaxws:dataBinding>指明WebServerService服务在server端使用了xmlbeans的数据绑定。
+<jaxws:server id="webServerService" serviceClass="codespring.service.WebServerService" address="/oneWebServer">
+        <jaxws:serviceBean>
+            <ref bean="webServerServiceImpl"/>
+        </jaxws:serviceBean>
+        <jaxws:dataBinding>
+                    <bean class="org.apache.cxf.xmlbeans.XmlBeansDataBinding"/>
+        </jaxws:dataBinding>
+</jaxws:server>
+
+CORBA
+1.CORBA（Common Object Request Broker Architecture,公共对象请求代理体系结构，通用对象请求代理体系结构）
+
 Apache CXF 一个正式的Apache顶级项目
-1.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+1.CXF （Celtix + XFire）是一个开源的Services框架。
+2.CXF 帮助您利用 FrontEnt 编程 API 来构建和开发 Services ，像 JAX-WS 。
+3.1.这些 Services 可以支持多种协议，比如：SOAP、XML/HTTP、RESTful HTTP 或者 CORBA ，
+3.2.并且可以在多种传输协议上运行，比如：HTTP、JMS 或者 JBI，
+4.CXF 大大简化了 Services 的创建，同时它继承了 XFire 传统，一样可以天然地和 Spring 进行无缝集成。
 
