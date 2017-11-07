@@ -1,0 +1,122 @@
+（转载：https://zhuanlan.zhihu.com/p/29426019）
+IOC
+0.使用依赖注入前，代码是什么样子，有什么缺点？
+1.项目添加日志功能：
+引入PerfectLogger jar，发现里面提供了很多种日志打印功能，有打印到文件的，有打印到控制台的，还有打印到远程服务器上的，这些类都实现了一个叫ILogger的接口：
+ILogger
+    FileLogger
+    ConsoleLogger
+    ServerLogger
+    …
+--打印日志到文件，那就用FileLogger吧！
+1.1.在支付接口的代码中，加入了日志打印
+public class PaymentAction {
+
+	private ILogger logger = new FileLogger();
+
+	public void pay(BigDecimal payValue) {
+		logger.log("pay begin, payValue is " + payValue);
+
+		// do otherthing
+		// ...
+
+		logger.log("pay end");
+	}
+}
+1.2.又在登录、鉴权、退款、退货等接口，都加上和支付接口类似的日志功能，要加的地方还真不少，加了两天两夜，终于加完了，大功告成！想到自己第一个任务就顺利完成了，不禁有点小得意…
+2.改需求了
+2.1.日志文件太多了，不能都打印到本地的目录下，要我们把日志打印到一台日志服务器上
+--这个简单，我只需要做个全局替换，把FileLogger都替换成ServerLogger就完事了。
+--那要是下次公司让我们把日志打印到控制台，或者又突然想让我们打印到本地文件呢，你还是继续全局替换吗？
+3.代码如何解耦
+3.1.--我看了一下你现在的代码，每个Action中的logger都是由Action自己创造的，所以如果要修改logger的实现类，就要改很多地方。有没有想过可以把logger对象的创建交给外部去做呢？
+--工厂模式！
+3.2.代码做了重构：
+public class LoggerFactory {
+	public static ILogger createLogger() {
+		return new ServerLogger();
+	}
+}
+
+public class PaymentAction {
+
+	private ILogger logger = LoggerFactory.createLogger();
+
+	public void pay(BigDecimal payValue) {
+		logger.log("pay begin, payValue is " + payValue);
+
+		// do otherthing
+		// ...
+
+		logger.log("pay end");
+	}
+}
+4.啪！一盘冷水
+--工厂类每次都new一个新对象，是不是很浪费，能不能做成单例的，甚至是做成单例和多例是可以配置；
+--如果有这种需求：支付信息比较多而且比较敏感，日志要打印到远程服务器，其他信息都打印到本地，怎么实现；
+--…
+5.Spring! Spring!
+其实这种将对象交给外部去创建的机制，不仅仅是工厂模式，它还被称为控制反转（Inverse of Control），
+它还有另一个更常用的名称，依赖注入（Dependency Injection）。
+这种机制，业界已经有很成熟的实现了，它就是Spring Framework，
+5.1.使用Spring改造代码
+--在使用gradle引入了必要的jar包后，大雄对原来的PaymentAction做了修改，不再在类内部创建logger对象，同时给PaymentAction添加了一个构造函数，方便Spring进行注入：
+public class PaymentAction {
+
+	private ILogger logger;
+
+	public PaymentAction(ILogger logger) {
+		super();
+		this.logger = logger;
+	}
+
+	public void pay(BigDecimal payValue) {
+		logger.log("pay begin, payValue is " + payValue);
+
+		// do otherthing
+		// ...
+
+		logger.log("pay end");
+	}
+}
+接着创建了一个以<beans>为根节点的xml文件，引入必要的XSD文件，并且配置了两个bean对象，使用了<constructor-arg>标签，指定了ServerLogger作为PaymentAction构造函数的入参：
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+  <bean id="paymentAction" class="com.springnovel.paymentwithspringxml.PaymentAction">
+  	<constructor-arg ref="serverLogger" />
+  </bean>
+
+  <bean id="serverLogger" class="com.springnovel.perfectlogger.ServerLogger" />
+
+</beans>
+5.2.差不多了，现在测试一下：
+ApplicationContext context = new ClassPathXmlApplicationContext("payment.xml");
+PaymentAction paymentAction = (PaymentAction) context.getBean("paymentAction");
+paymentAction.pay(new BigDecimal(2));
+5.3.Output:
+    ServerLogger: pay begin, payValue is 2
+    ServerLogger: pay end
+很棒！ServerLogger对象已经被注入到PaymentAction中了。
+就这样，很快就使用Spring实现了自己昨天写的工厂类的功能，修复了之前代码耦合性过高的问题。
+6.笔记
+这两天可谓是收获颇丰，见识了依赖注入的必要性，还了解了如何使用Spring实现依赖注入。撸完串后，回到家，大雄在记事本上写下了心得：
+
+--为什么要使用依赖注入
+    传统的代码，每个对象负责管理与自己需要依赖的对象，导致如果需要切换依赖对象的实现类时，需要修改多处地方。同时，过度耦合也使得对象难以进行单元测试。
+    依赖注入把对象的创造交给外部去管理,很好的解决了代码紧耦合（tight couple）的问题，是一种让代码实现松耦合（loose couple）的机制。
+    松耦合让代码更具灵活性，能更好地应对需求变动，以及方便单元测试。
+
+
+--为什么要使用Spring
+    使用Spring框架主要是为了简化Java开发（大多数框架都是为了简化开发），它帮我们封装好了很多完善的功能，而且Spring的生态圈也非常庞大。
+    基于XML的配置是Spring提供的最原始的依赖注入配置方式，从Spring诞生之时就有了，功能也是最完善的（但是貌似有更好的配置方法，明天看看！）。
+
+7.未完待续
+
+  写完笔记，继续看之前只看了一小部分的Spring指南，他发现除了构造器注入，还有一种注入叫set注入；
+  除了xml配置，还可以使用注解、甚至是Java进行配置。
+  Spring真是强大啊，给了用户那么多选择，可具体什么情况下该使用哪种注入方式和哪种配置方式呢，陷入了沉思……
+
