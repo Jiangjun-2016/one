@@ -1,0 +1,189 @@
+（转载：https://zhuanlan.zhihu.com/p/29426019）
+IOC
+0.  构造器注入有什么缺点？
+    如何使用setter注入？
+    setter注入为什么会导致空指针异常？
+
+1.越来越庞大的构造函数：
+--我们的订单接口和支付接口都已经非常完善了，现在需要在支付完成时更新一下订单的状态，你看看这个需求如何实现。
+--这个好办，只需要给支付接口添加一个新的依赖IOrderDao，然后把OrderDao注入进去就可以了。
+1.1.给PaymentAction加了一个成员变量orderDao，然后新建了一个构造函数，把orderDao注入到PaymentAction里面去，
+接着写了一个updateOrderAfterPayment方法，调用orderDao的方法更新订单
+public class PaymentAction {
+
+    private ILogger logger;
+
+    // 新添加的dao !!!
+    private IOrderDao orderDao;
+
+    public PaymentAction(ILogger logger) {
+        super();
+        this.logger = logger;
+    }
+
+    // 新添加的构造方法 !!!
+    public PaymentAction(ILogger logger, IOrderDao orderDao) {
+        super();
+        this.logger = logger;
+        this.orderDao = orderDao;
+    }
+
+    public void pay(BigDecimal payValue) {
+        logger.log("pay begin, payValue is " + payValue);
+
+        // do otherthing
+        // ...
+
+        logger.log("pay end");
+    }
+
+    // 新方法 !!!
+    public void updateOrderAfterPayment(String orderId) {
+        orderDao.updateOrderAfterPayment(orderId);
+    }
+
+}
+最后修改了一下payment.xml，注入orderDao：
+<bean id="paymentAction" class="com.springnovel.payment.springxml.PaymentAction">
+	<constructor-arg ref="serverLogger">
+	</constructor-arg>
+	<constructor-arg ref="orderDao">
+	</constructor-arg>
+</bean>
+
+<bean id="serverLogger" class="com.springnovel.perfectlogger.ServerLogger" />
+<bean id="orderDao" class="com.springnovel.dao.OrderDao" />
+就这样，很快实现了往支付接口添加订单更新功能的需求，兴冲冲地提交了代码Review的请求…
+1.2.很快，Review结果回来了：
+    如果后面PaymentAction需要依赖更多的接口，比如短信发送接口、支付宝接口、微信支付接口等等，你还是往构造函数里面加吗？
+    假如依赖了20个接口，那你的构造函数就会有20个参数，就像下面这段代码，你觉得这样的代码优雅吗？
+public PaymentAction(ILogger logger, IOrderDao orderDao, ISMSUtil smsUtil, IPaybal paybal, IWechatPay wechatPay, ...) {
+    super();
+    this.logger = logger;
+    this.orderDao = orderDao;
+    this.smsUtil = smsUtil;
+    this.paybal = paybal;
+    this.wechatPay = wechatPay;
+    ...
+}
+2.Setter注入
+Builder模式:初步的理解Builder模式解决了要设置的参数过多不好管理的问题
+Spring时看到的另一种注入方式 —— setter注入。
+2.1接下来，就是用setter注入改造PaymentAction了，把之前含有两个参数的构造函数去掉，然后加上了一个setOrderDao方法：
+public class PaymentAction_SetInjection {
+
+    private ILogger logger;
+    private IOrderDao orderDao;
+
+    public PaymentAction_SetInjection(ILogger logger) {
+        super();
+        this.logger = logger;
+    }
+
+    // set注入 !!!
+    public void setOrderDao(IOrderDao orderDao) {
+        this.orderDao = orderDao;
+    }
+
+    public void pay(BigDecimal payValue) {
+        logger.log("pay begin, payValue is " + payValue);
+
+        // do otherthing
+        // ...
+
+        logger.log("pay end");
+    }
+
+    public void updateOrderAfterPayment(String orderId) {
+        orderDao.updateOrderAfterPayment(orderId);
+    }
+
+}
+2.2.接着再修改一下payment.xml，使用<property>标签，注入orderDao：
+<bean id="paymentAction_setInjection" class="com.springnovel.payment.springxml.PaymentAction_SetInjection">
+	<constructor-arg ref="serverLogger">
+	</constructor-arg>
+	<property name="orderDao" ref="orderDao"></property>
+</bean>
+2.3.测试一下：
+
+    public void test_PaymentAction_UpdateOrder_XML_SetInjection() {
+    	ApplicationContext context = new ClassPathXmlApplicationContext("payment.xml");
+    	PaymentAction_SetInjection paymentAction = (PaymentAction_SetInjection) context.getBean("paymentAction_setInjection");
+    	paymentAction.updateOrderAfterPayment("123456");
+    }
+    Output:
+
+    real update order after payment, orderId is 123456
+3.空指针异常！
+再一次准备提交review请求，
+“啊，不对劲，那这样构造器注入岂不是完败于setter注入了？不科学呀。。。setter注入肯定有什么局限是我还没发现的…..”
+
+“Spring容器初始化对象时，会去调用对象的构造函数，此时如果采用构造器注入，并且xml里没有配置对应的<constructor>标签，那么由于没有与之匹配的构造函数，注入应该会失败”
+
+“而setter注入，如果没有配置<property>，是会提示初始化失败呢，还是压根就不注入呢？”。
+
+“修改一下代码，验证一下不就知道了！”
+于是首先把<constructor>标签注释掉：
+<bean id="paymentAction_setInjection" class="com.springnovel.payment.springxml.PaymentAction_SetInjection">
+	<!--<constructor-arg ref="serverLogger">-->
+	<!--</constructor-arg>-->
+	<property name="orderDao" ref="orderDao"></property>
+</bean>
+3.1.执行测试用例，果然报错了：
+
+    org.springframework.beans.factory.BeanCreationException:
+    ...
+    No default constructor found;
+    提示“没有默认的构造函数”，可见由于没有配置<constructor>标签，Spring容器调用了空参数的构造函数，而PaymentAction类并没有空参的构造函数，因此报错了，这种错误会导致容器初始化失败，因此很容易发现。
+3.2.接着撤销了操作，然后把<property>标签注释掉：
+
+    <bean id="paymentAction_setInjection" class="com.springnovel.payment.springxml.PaymentAction_SetInjection">
+    	<constructor-arg ref="serverLogger">
+    	</constructor-arg>
+    	<!--<property name="orderDao" ref="orderDao"></property>-->
+    </bean>
+重新执行测试用例，啊，报错了！ 空指针异常！：
+
+java.lang.NullPointerException
+	at com.springnovel.payment.springxml.PaymentAction_SetInjection.updateOrderAfterPayment(PaymentAction_SetInjection.java:34)
+	at com.springnovel.test.PaymentTest.test_PaymentAction_UpdateOrder_XML_SetInjection(PaymentTest.java:46)
+看来如果没有在xml里面指定要注入的对象，那么set注入不会失败，所依赖的对象没有被注入任何对象，因此默认为null。
+“这可不太好，万一真的粗心大意忘了在xml里面指定要注入的对象呢，容器是可以成功启动，但是运行时可就挂了。。。”
+3.3.有没有办法让setter注入的属性成为必填项呢？
+--Reuqired注解
+首先要开启Spring注解的功能，给payment.xml加入这些配置：
+<beans
+       ...
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="
+        ...
+        http://www.springframework.org/schema/context
+	    http://www.springframework.org/schema/context/spring-context-2.5.xsd">
+
+    <context:annotation-config/>
+
+接着再给PaymentAction的setOrderDao方法加入@Required注解：
+@Required
+public void setOrderDao(IOrderDao orderDao) {
+	this.orderDao = orderDao;
+}
+3.4.再次执行测试用例，结果当然还是报错，不过这次是在容器初始化就提示错误了:
+
+    org.springframework.beans.factory.BeanCreationException:
+    ...
+    Property 'orderDao' is required for bean 'paymentAction_setInjection'
+    “这下好了，在Spring容器创建对象时就报错了，不会等到执行代码时再来抛个空指针异常，简直是粗心大意的程序员的救星啊！”
+4.笔记
+Constructor注入 vs Setter注入
+Constructor注入能够强制要求调用者注入构造函数中的所有参数，否则在容器初始化时就会失败；但是如果要注入的对象过多，就会导致构造函数过于庞大。
+Setter注入，类似于Builder模式，将原本庞大的构造函数，拆解为了一个小的构造函数和许多个set方法。
+setter注入不能保证对象一定会被注入，但是可以使用@Required注解，强制要求使用者注入对象，否则在容器初始化时就会报错。
+
+
+
+
+
+
+
+

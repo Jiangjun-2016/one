@@ -1,0 +1,143 @@
+（转载：https://zhuanlan.zhihu.com/p/29426019）
+IOC
+0.  为什么说xml配置是类型不安全的配置方式？
+    如何使用注解进行配置？
+    注解配置是万能的吗？
+    如何使用Java Config进行配置？
+    xml、注解、Java Config，到底该如何选择？
+
+1."我不就改了一处地方，怎么就把服务器给整挂了呢”，他仔细地看了一下自己改的代码：
+
+  <bean id="serverLogger" class="com.springnovel.perfectlogger.CosoleLogger"/>
+  “啊！！原来是CosoleLogger拼错了…”
+
+2.类型不安全的xml配置
+--好像还有其他配置方式…注解？还有Java Config…啊！我明白你的意思了，使用注解和Java Config，这样在我拼写错的时候，由于找不到这类，编译都不会通过，我也就知道我拼写错了！”
+--“就是罗，而且这只是其他配置方式优于xml配置的一点，你用过之后就会发现他们有更多的优点了”
+--“好，我这就试试用注解方式改造一下我们的代码！”
+
+3.通过注解进行自动化装配
+决定先把原来PaymentAction中，使用xml配置的OrderDao，改为通过注解进行配置。
+首先，给OrderDao加上@Component注解,表明这个类是一个组件类，告诉Spring要为这个class创建bean，并注入给IOrderDao
+@Component
+public class OrderDao implements IOrderDao{
+    ......
+}
+接着需要告诉Spring哪些包是需要进行扫描并自动装配，因此，新建了一个配置类，然后使用@ComponentScan指明哪些包需要扫描：
+@Configuration
+@ComponentScan(basePackageClasses={IOrderDao.class,PaymentActionMixed.class})
+public class PaymentConfig {
+
+}
+这里的basePackageClasses是类型安全的，它的值是一个class数组，表明Spring将会扫描这些class所在的包。
+
+最后需要使用@Autowired，把扫描到的OrderDao通过构造器注入的方式，注入到PaymentAction中：
+
+@Component
+public class PaymentActionMixed {
+
+    ......
+	private IOrderDao orderDao;
+
+	......
+
+	@Autowired
+	public PaymentActionMixed(IOrderDao orderDao) {
+		super();
+		this.orderDao = orderDao;
+	}
+
+    ......
+
+	public void addOrder(String orderType) {
+		orderDao.addOrder(orderType);
+	}
+
+}
+
+4.测试一下，这里使用了SpringJUnit4ClassRunner以便于在测试开始的时候自动创建Spring的上下文，使用@ContextConfiguration告诉Spring要加载什么配置：
+@RunWith(SpringJUnit4ClassRunner.class)
+@ContextConfiguration(classes=PaymentConfig.class)
+public class PaymentMixedTest {
+
+	@Autowired
+	private PaymentActionMixed paymentActionMixed;
+
+	@Test
+	public void testPaymentMixedAddOrder() {
+		paymentActionMixed.addOrder("create_sub");
+	}
+}
+Output:
+
+real add order, order type is create_sub
+“仅仅用了几个注解，就成功地将OrderDao注入到PaymentAction里面了！比起xml啰里啰嗦的配置，简直是太方便了！”
+
+5.注解配置不是万能的
+“注解好方便啊，而且注解的同时还能起到注释的作用，看到@Component注解就知道这个对象是组件，看到@Autowire就知道这里会进行注入，我们项目以后都用注解进行配置吧！”
+
+“哈哈，你小子对注解的理解还挺深入的嘛。你说都用注解进行配置？那你试试把早上害惨你的ConsoleLogger改成注解注入试试？”
+
+“这还不简单哦，不就加几个注解的事儿吗……”说完，准备找地方加上@Component注解。
+
+“啊，不对，这个类又不是我们写的，这是我们引用的第三方的jar包……我们改不了它的源码啊……”
+
+“哈哈哈，你才发现啊？你刚刚不是还说以后都用注解吗？”
+
+“啊，那看来这里还是得有类型不安全的、啰里啰嗦的xml进行配置了……”
+
+“是咩？小伙子记性不行啊！”
+
+“啊对，还有一种配置方式……Java Config！”
+
+6.使用Java代码进行注入
+“啊啊，我有种预感，这种配置方式是自由度最高的，因为他叫Java Config，顾名思义，就是通过Java代码的方式进行注入，终于可以自己写代码进行注入了，xml和注解都感觉好没劲！”
+
+开始使用Java Config的配置方式来注入第三方jar包里的ConsoleLogger。
+
+使用Java Config，只需要创建一个配置类，在配置类中编写方法，返回要注入的对象，并给方法加上@Bean注解，告诉Spring为返回的对象创建实例：
+@Configuration
+public class PaymentJavaConfig {
+
+    @Bean
+    public ILogger getIlogger() {
+        return new ConsoleLogger();
+    }
+
+    @Bean
+    public PaymentActionMixed getPaymentActionMixed(ILogger logger)     {
+        return new PaymentActionMixed(logger);
+    }
+}
+接着就可以进行测试了：
+
+@RunWith(SpringJUnit4ClassRunner.class)
+@ContextConfiguration(classes = PaymentJavaConfig.class)
+public class PaymentJavaConfigTest {
+
+    @Autowired
+    private PaymentActionMixed paymentActionMixed;
+
+    @Test
+    public void testPaymentMixedAddOrder() {
+        paymentActionMixed.pay(new BigDecimal(100));
+    }
+}
+
+Output:
+
+ConsoleLogger: pay begin, payValue is 100
+ConsoleLogger: pay end
+“Java Config也是非常方便，虽然要写的代码比注解多了不少，但是一方面,相比于注解配置，Java Config对代码没有侵入，可以注入代码不是自己维护的类；另一方面，Java Config是使用Java代码进行注入的，相比于xml来说，又更为自由”
+
+7.笔记
+今天又掌握了Spring依赖注入的另外两种配置方式——注解和Java Config，是时候把这三种方式做个总结了：
+--  xml配置相对于其他两种方式来说，几乎没什么优势，唯一的优势就是修改后不需要重新编译，因此对于一些经常切换实现类的对象，可以采用xml的方式进行配置。
+    还有就是由于xml是Spring一开始就提供的配置方式，因此很多旧代码还是采用xml，所以在维护旧代码时会免不了用到xml。
+--  注解用起来非常地简洁，代码量十分少，因此是项目的第一选择。
+    只有当需要注入代码不是自己维护的第三方jar包中的类时，或者需要更为灵活地注入，比如说需要调用某个接口，查询数据，然后把这个数据赋值给要注入的对象，那么这时候就需要用到Java Config。
+
+
+
+
+
