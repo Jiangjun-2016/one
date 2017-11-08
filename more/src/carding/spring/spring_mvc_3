@@ -1,0 +1,96 @@
+（转载：http://blessht.iteye.com/blog/2121845）
+springmvc
+
+0.
+    Spring框架提供了构建Web应用程序的全功能MVC模块，叫Spring MVC，通过Spring Core+Spring MVC即可搭建一套稳定的Java Web项目。本文通过Spring MVC源码分析介绍它的核心实现原理。
+    Tomcat服务器启动入口文件是web.xml，通过在其中配置相关的Listener和Servlet即可加载Spring MVC所需数据。基于Spring MVC最简单的配置如下。
+    	<!-- 加载Spring配置文件 -->
+    	<context-param>
+    		<param-name>contextConfigLocation</param-name>
+    		<param-value>
+    		classpath:spring-context*.xml
+    		</param-value>
+    	</context-param>
+    	<listener>
+    		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
+    	</listener>
+
+    	<!-- 加载spring mvc -->
+    	<servlet>
+    		<servlet-name>spring3mvc</servlet-name>
+    		<servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+    		<init-param>
+    			<param-name>contextConfigLocation</param-name>
+    			<param-value>
+    			classpath:spring-mvc*.xml
+    			</param-value>
+    		</init-param>
+    		<load-on-startup>1</load-on-startup>
+    	</servlet>
+
+    	<servlet-mapping>
+    		<servlet-name>spring3mvc</servlet-name>
+    		<url-pattern>/</url-pattern>
+    	</servlet-mapping>
+
+1.创建容器
+          ContextLoaderListener基于Web上下文级别的监听器在启动服务器时就创建ApplicationContext并且将配置的Spring Bean加载到XML中。
+          DispatcherServlet是一个请求分发控制器，所有匹配的URL都会通过该Servlet分发执行，在创建Servlet对象时会初始化Spring MVC相关配置。
+          在web.xml中，我们看到基于ContextLoaderListener和DispatcherServlet都可以配置spring相关的XML，值得说明的是这两种方式加载spring的ApplicationContext上下文对象不是合并存储的，具体可参考http://blog.csdn.net/madun/article/details/8988860。所以个人建议，基于mvc相关的spring配置由DispatcherServlet加载，而其余的JavaBean都交给ContextLoaderListener加载。
+
+1.1.ContextLoaderListener
+    ContextLoaderListener是一个实现了ServletContextListener接口的监听器，在启动项目时会触发contextInitialized方法（该方法主要完成ApplicationContext对象的创建），在关闭项目时会触发contextDestroyed方法（该方法会执行ApplicationContext清理操作）。
+
+    public class ContextLoaderListener extends ContextLoader implements ServletContextListener
+
+    ConextLoaderListener加载Spring上下文的过程:
+    ①启动项目时触发contextInitialized方法，该方法就做一件事：通过父类contextLoader的initWebApplicationContext方法创建Spring上下文对象。
+    ②initWebApplicationContext方法做了三件事：创建WebApplicationContext；加载对应的Spring文件创建里面的Bean实例；将WebApplicationContext放入ServletContext（就是Java Web的全局变量）中。
+    ③createWebApplicationContext创建上下文对象，支持用户自定义的上下文对象，但必须继承自ConfigurableWebApplicationContext，
+    而Spring MVC默认使用ConfigurableWebApplicationContext作为ApplicationContext（它仅仅是一个接口）的实现。
+    ④configureAndRefreshWebApplicationContext方法用于封装ApplicationContext数据并且初始化所有相关Bean对象。它会从web.xml中读取名为contextConfigLocation的配置，这就是spring xml数据源设置，然后放到ApplicationContext中，最后调用传说中的refresh方法执行所有Java对象的创建。
+    ⑤完成ApplicationContext创建之后就是将其放入ServletContext中，注意它存储的key值常量。
+
+    servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, this.context);
+    //常量
+    public static final String ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE = WebApplicationContext.class.getName() + ".ROOT";
+
+    注：要获取 ContextLoader级别的IOC容器对象可以这样写：
+    WebApplicationContext rootContext = WebApplicationContextUtils.getWebApplicationContext(getServletContext());
+
+1.2.DispatcherServlet
+    DispatcherServlet是前端控制器设计模式的实现，提供Spring Web MVC的集中访问点，而且负责职责的分派，而且与Spring IoC容器无缝集成，从而可以获得Spring的所有好处。
+
+    如果在web.xml中设置了Servlet的<load-on-startup>1</load-on-startup>，则表示随项目启动，而我们知道Servelt创建时会首先调用init方法，所以继承了HttpServlet的HttpServletBean就是关键入口了。那么整个代码运行流程:
+    ①HttpServletBean.init方法中执行initServletBean方法进行初始化操作，当然该方法在HttpServletBean是空方法，所以需要子类重写。
+    ②FrameworkServlet.initServletBean子类不负众望，重写了initServletBean方法，该方法最核心的操作就是调用initWebApplicationContext()执行上下文Bean初始化。
+    ③FrameworkServlet.initWebApplicationContext方法首先获取自己的双亲上下文（也就是ContextLoaderListener初始化成功的WebApplicationContext）；然后创建或者获取当前Servelet的WebApplicationContext。
+    ④无论是自己创建还是获取现有的WebApplicationContext，最终都会让Servelt级别的WebApplicationContext执行configureAndRefreshWebApplicationContext()方法进行上下文容器初始化。
+
+    通过以上几步即可创建一个完整的IOC容器，而完成容器创建之后，DispatcherServlet还做了一件事：初始化Servelt控制器必备对象，这个是在initWebApplicationContext()方法中通过调用onRefresh(wac)方法实现的。而onRefresh也被重写过，如果要了解怎么初始化Servlet控制器必备对象可以查看DispatcherServlet的onRefresh方法了解。
+
+    	/**
+    	 * This implementation calls {@link #initStrategies}.
+    	 */
+    	@Override
+    	protected void onRefresh(ApplicationContext context) {
+    		initStrategies(context);
+    	}
+
+    	/**
+    	 * Initialize the strategy objects that this servlet uses.
+    	 * <p>May be overridden in subclasses in order to initialize further strategy objects.
+    	 */
+    	protected void initStrategies(ApplicationContext context) {
+    		initMultipartResolver(context);
+    		initLocaleResolver(context);
+    		initThemeResolver(context);
+    		initHandlerMappings(context);
+    		initHandlerAdapters(context);
+    		initHandlerExceptionResolvers(context);
+    		initRequestToViewNameTranslator(context);
+    		initViewResolvers(context);
+    		initFlashMapManager(context);
+    	}
+
+
