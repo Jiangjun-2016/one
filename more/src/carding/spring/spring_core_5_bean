@@ -1,0 +1,69 @@
+（转载：http://blog.csdn.net/zghwaicsdn/article/details/50910384）
+spring core包 spring 注解扫描bean配置
+
+0.在applicationContext.xml配置如下：
+
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd"
+	default-lazy-init="true">
+	<description>Spring公共配置 </description>
+	<!-- 使用annotation 自动注册bean, 并保证@Required、@Autowired的属性被注入 -->
+	<context:component-scan base-package="com.zghw">
+	</context:component-scan>
+</beans>
+
+spring 会自动扫描com.zghw下的spring注解
+
+1.--定义Bean的注解
+
+  @Controller
+  @Controller("Bean的名称")
+  定义控制层Bean,如Action
+
+  @Service
+  @Service("Bean的名称")
+  定义业务层Bean
+
+  @Repository
+  @Repository("Bean的名称")
+  定义DAO层Bean
+
+  @Component
+  定义Bean, 不好归类时使用.
+
+2.--自动装配Bean （选用一种注解就可以）
+  @Autowired  (Srping提供的)
+  默认按类型匹配,自动装配(Srping提供的)，可以写在成员属性上,或写在setter方法上
+
+  @Autowired(required=true)
+  一定要找到匹配的Bean，否则抛异常。 默认值就是true
+
+  @Autowired
+  @Qualifier("bean的名字")
+  按名称装配Bean,与@Autowired组合使用，解决按类型匹配找到多个Bean问题。
+
+  @Resource   JSR-250提供的
+  默认按名称装配,当找不到名称匹配的bean再按类型装配.
+  可以写在成员属性上,或写在setter方法上
+  可以通过@Resource(name="beanName") 指定被注入的bean的名称, 要是未指定name属性, 默认使用成员属性的变量名,一般不用写name属性.
+  @Resource(name="beanName")指定了name属性,按名称注入但没找到bean, 就不会再按类型装配了.
+
+  @Inject   是JSR-330提供的
+  按类型装配，功能比@Autowired少，没有使用的必要。
+
+  --定义Bean的作用域和生命过程
+  @Scope("prototype")
+  值有:singleton,prototype,session,request,session,globalSession
+
+  @PostConstruct
+  相当于init-method,使用在方法上，当Bean初始化时执行。
+
+  @PreDestroy
+  相当于destory-method，使用在方法上，当Bean销毁时执行。
+
+3.--声明式事务
+  @Transactional
