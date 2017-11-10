@@ -1,0 +1,191 @@
+（转载：http://blog.csdn.net/zghwaicsdn/article/details/50708823）
+cglib
+0.  原理
+    代理为控制要访问的目标对象提供了一种途径。
+    当访问对象时，它引入了一个间接的层。JDK自从1.3版本开始，就引入了动态代理，并且经常被用来动态地创建代理。JDK的动态代理用起来非常简单，当它有一个限制，就是使用动态代理的对象必须实现一个或多个接口。
+    如果想代理没有实现接口的继承的类，该怎么办？现在我们可以使用CGLIB包。
+
+1.什么是cglib
+   CGLIB是一个强大的高性能的代码生成包。
+        1>它广泛的被许多AOP的框架使用，例如：Spring AOP和dynaop，为他们提供方法的interception（拦截）；
+        2>hibernate使用CGLIB来代理单端single-ended(多对一和一对一)关联（对集合的延迟抓取，是采用其他机制实现的）；
+        3>EasyMock和jMock是通过使用模仿（moke）对象来测试java代码的包。
+   它们都通过使用CGLIB来为那些没有接口的类创建模仿（moke）对象。
+
+2.底层
+    CGLIB包的底层是通过使用一个小而快的字节码处理框架ASM(Java字节码操控框架)，来转换字节码并生成新的类。
+    除了CGLIB包，脚本语言例如 Groovy和BeanShell，也是使用ASM来生成java的字节码。
+    当不鼓励直接使用ASM，因为它要求你必须对JVM内部结构包括class文件的格式和指令集都很熟悉。
+    所以cglib包要依赖于asm包，需要一起导入。
+    Spring AOP和Hibernate同时使用JDK的动态代理和CGLIB包。Spring AOP，如果不强制使用CGLIB包，默认情况是使用JDK的动态代理来代理接口。
+
+3.实例场景模拟
+  1. 我们创建一个对Table操作的DAO类，提供了CRUD方法。
+      BookServiceBean.java
+
+      package com.tech.cglibx;
+      public class BookServiceBean {
+          public void create(){
+              System.out.println("create() is running !");
+          }
+          public void query(){
+              System.out.println("query() is running !");
+          }
+          public void update(){
+              System.out.println("update() is running !");
+          }
+          public void delete(){
+              System.out.println("delete() is running !");
+          }
+      }
+
+      OK，它就是一个javaBean，提供了CRUD方法的javaBean。
+      下面我们创建一个DAO工厂，用来生成DAO实例。
+
+      package com.tech.cglibx;
+
+      public class BookServiceFactory {
+        private static BookServiceBean service = new BookServiceBean();
+        private BookServiceFactory() {
+        }
+        public static BookServiceBean getInstance() {
+         return service;
+        }
+      }
+
+      接下来我们创建客户端，用来调用CRUD方法。
+
+      public class Client {
+
+          public static void main(String[] args) {
+              BookServiceBean service = BookServiceFactory.getInstance();
+              doMethod(service);
+          }
+          public static void doMethod(BookServiceBean service){
+              service.create();
+              service.update();
+              service.query();
+              service.delete();
+          }
+      }
+
+      OK，完成了，CRUD方法完全被调用了。
+      当然这里并没有CGlib的任何内容。问题不会这么简单的就结束，新的需求来临了。
+
+  2. one day，Boss告诉我们这些方法不能开放给用户，只有“boss”才有权使用。
+  怎么办，难道我们要在每个方法上面进行判断吗？好像这么做也太那啥了吧？
+  对了，Proxy可能是最好的解决办法。jdk的代理就可以解决了。 好了我们来动手改造吧。
+  等等jdk的代理需要实现接口，这样， 我们的dao类需要改变了。既然不想改动dao又要使用代理，我们这就请出CGlib。
+  我们只需新增一个权限验证的方法拦截器。
+
+  package com.tech.cglibx;
+  import java.lang.reflect.Method;
+  import net.sf.cglib.proxy.Enhancer;
+  import net.sf.cglib.proxy.MethodInterceptor;
+  import net.sf.cglib.proxy.MethodProxy;
+  import org.apache.log4j.Logger;
+
+  public class MyCglibProxy implements MethodInterceptor{
+
+        private Logger log=Logger.getLogger(MyCglibProxy.class);
+        public Enhancer enhancer = new Enhancer();
+        private String name;
+
+        public MyCglibProxy(String name) {
+              this.name = name ;
+        }
+       /**
+        * 根据class对象创建该对象的代理对象
+        * 1、设置父类；2、设置回调
+        * 本质：动态创建了一个class对象的子类
+        * @param cls
+        * @return
+        */
+       public Object getDaoBean(Class cls) {
+            enhancer.setSuperclass(cls);
+            enhancer.setCallback(this);
+            return enhancer.create();
+       }
+
+       @Override
+       public Object intercept(Object object, Method method, Object[] args,
+             MethodProxy methodProxy) throws Throwable {
+
+             log.info("调用的方法是：" + method.getName());
+             //用户进行判断
+             if(!"张三".equals(name)){
+                     System.out.println("你没有权限！");
+                    return null;
+             }
+             Object result = methodProxy.invokeSuper(object, args);
+             return result;
+       }
+  }
+
+   当然不能忘了对我们的dao工厂进行修改，我们提供一个使用代理的实例生成方法。
+   上面的类中已经提供了一个通用的获取代理实例的方法，没有特殊需求（如下3）的方式可以使用上面的方式获取代理对象。
+
+   public static BookServiceBean getProxyInstance(MyCglibProxy myProxy){
+        Enhancer en = new Enhancer();
+        //进行代理
+        en.setSuperclass(BookServiceBean.class);
+        en.setCallback(myProxy);
+        //生成代理实例
+        return (BookServiceBean)en.create();
+    }
+
+    我们这就可以看看客户端的实现了。添加了两个方法用来验证不同用户的权限
+
+    BookServiceBean service = BookServiceFactory.getProxyInstance(new MyCglibProxy("boss"));
+    service.create();
+    BookServiceBean service2 = BookServiceFactory.getProxyInstance(new MyCglibProxy("john"));
+    service2.create();
+
+   OK,"boss"的正常执行，"john"的没有执行。
+   看到了吗？简单的aop就这样实现了
+   难道就这样结束了么？
+
+3.  grd Boss又来训话了，不行不行，现在除了"boss"其他人都用不了了，现在不可以这样。
+    必须使用开放查询功能。
+    哈哈，现在可难不倒我们了，因为我们使用了CGlib。当然最简单的方式是去修改我们的方法拦截器，不过这样会使逻辑变得复杂，且不利于维护。
+    还好CGlib给我们提供了方法过滤器（CallbackFilter）,CallbackFilte可以明确表明，被代理的类中不同的方法，被哪个拦截器所拦截。
+    下面我们就来做个过滤器用来过滤query方法。
+
+    package com.tech.cglibx;
+
+    import java.lang.reflect.Method;
+    import net.sf.cglib.proxy.CallbackFilter;
+
+    public class MyProxyFilter implements CallbackFilter {
+     @Override
+     public int accept(Method arg0) {
+            if(!"query".equalsIgnoreCase(arg0.getName()))
+                return 0;
+            return 1;
+        }
+    }
+
+    我们在工场中新增一个使用了过滤器的实例生成方法。
+
+    public static BookServiceBean getAuthInstanceByFilter(MyCglibProxy myProxy){
+         Enhancer en = new Enhancer();
+         en.setSuperclass(BookServiceBean.class);
+         en.setCallbacks(new Callback[]{myProxy,NoOp.INSTANCE});
+         en.setCallbackFilter(new MyProxyFilter());
+         return (BookServiceBean)en.create();
+     }
+
+    setCallbacks中定义了所使用的拦截器，其中NoOp.INSTANCE是CGlib所提供的实际是一个没有任何操作的拦截器，
+    他们是有序的,一定要和CallbackFilter里面的顺序一致。
+    上面return返回(0/1)的就是返回的顺序。
+    也就是说如果调用query方法就使用NoOp.INSTANCE进行拦截。
+    现在看一下客户端代码。
+
+    BookServiceBean service = BookServiceFactory.getProxyInstanceByFilter(new MyCglibProxy("jhon"));
+    service.create();
+    BookServiceBean service2 = BookServiceFactory.getProxyInstanceByFilter(new MyCglibProxy("jhon"));
+    service2.query();
+
+    ok,现在"李四"也可以使用query方法了，其他方法仍然没有权限。
+    当然这个代理的实现没有任何侵入性，无需强制让dao去实现接口。
+
