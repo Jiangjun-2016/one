@@ -1,0 +1,139 @@
+（转载：http://perfect5085.iteye.com/blog/1612931）
+spring aop asm字节码处理框架
+0.什么是asm呢？
+        asm是assembly的缩写，是汇编的称号，对于java而言，asm就是字节码级别的编程。
+        而这里说到的asm是指objectweb asm,一种.class的代码生成器的开源项目.
+
+ ASM是一套java字节码生成架构，它可以动态生成二进制格式的stub类或其它代理类，
+
+ 或者在类被java虚拟机装入内存之前，动态修改类。
+ 现在挺多流行的框架都使用到了asm.所以从aop追溯来到了这。
+
+1.什么是ObjectWeb ASM
+      ObjectWeb ASM是轻量级的Java字节码处理框架。它可以动态生成二进制格式的stub类或其他代理类，或者在类被JAVA虚拟机装入内存之前，动态修改类。
+      ASM 提供了与 BCEL和SERP相似的功能，只有22K的大小，比起350K的BCEL和150K的SERP来说，是相当小巧的，并且它有更高的执行效率，
+      是BCEL 的7倍，SERP的11倍以上。
+
+  在我看来，ObjectWeb ASM具有如下几个非常诱人的特点
+      * 小巧、高效
+      * 源代码实现非常简洁而又优雅，简直就是Gof的《设计模式》非常棒的注解
+      * 字节码级的控制，能够更高效地实现字节码的控制
+
+  ObjectWeb ASM有2组接口：
+      * 基于事件驱动的接口，类似于xml的SAX接口，visitor模式，在访问到类定义某个部分的时候进行回调，实现上比tree接口高效，占用内存更小
+      * 基于tree的接口，类似于xml的DOM接口，将类定义解析成tree
+
+  这里我们将使用ObjectWeb ASM的事件驱动接口
+
+2． 目标
+    我们将对已有的字节码进行增强，收集进入方法和退出方法的信息，这里主要解决Method Monitor的字节码增强部分，
+    不对收集后的数据处理做更深入地研究，出于演示的目的，我们定义了如下的收集方法的访问信息处理，
+    在实际应用中，我们可能会使用更好的格式收集更多的数据、使用异步处理提高性能、使用批量处理提高处理能力、使用友好的UI显示信息等等，
+    此处不对这部分进行探讨
+
+    package blackstar.methodmonitor.instrutment.monitor;
+
+    public class MonitorUtil{
+            public final static String CLASS_NAME = MonitorUtil.class.getName().replaceAll("\\.", "/");
+            public final static String ENTRY_METHOD = "entryMethod";
+            public final static String EXIT_METHOD = "exitMethod";
+            public final static String METHOD = "(Ljava/lang/String;Ljava/lang/String;)V";
+
+           public static void entryMethod(String className, String methodName){
+               System.out.println("entry : " + className + "." + methodName);
+           }
+
+           public static void exitMethod(String className, String methodName){
+               System.out.println("exit : " + className + "." + methodName);
+           }
+      }
+
+3． 从字节码开始
+    实际上，对于被监控制的代码，我们所需要实现的功能如下，红色部分的代码是我们需要在动态期插到字节码中间的
+
+    public xxx method(…){
+        try{
+             methodEntry(…)
+             methodCode
+         }finally{
+              methodExit(…)
+         }
+    }
+
+    这个问题看起来简单，实际则没有那么容易，因为在JVM的字节码设计中，字节码并不直接支持finally语句，而是使用try…catch来模拟的，我们先来看一个例子
+
+    package blackstar.methodmonitor.instrutment.test;
+
+    public class Test{
+            public void sayHello() throws Exception{
+                try{
+                    System.out.println("hi");
+                } catch (Exception e){
+                   System.out.println("exception");
+                   return;
+                } finally{
+                   System.out.println("finally");
+               }
+           }
+    }
+
+    我们看看字节码是如何处理finally语句的
+          首先看看异常表，异常是在JVM级别上直接支持的，下面异常表的意思是，在执行0-8语句的时候，如果有异常java.lang.Exception抛出，则进入第11语句，
+    在执行0-20语句的时候，有任何异常抛出，都进入29语句。实际上JVM是这样实现finally语句的：
+
+    * 在任何return语句之前，都会增加finally语句中的字节码
+    * 定义一个捕获所有异常的语句，增加finally语句中的字节码，如果finally中没有return语句，则会将异常再次抛出去(处理方法以抛出异常的方式结束)
+
+    Exceptions:
+    [0-8): 11 - java.lang.Exception
+    [0-20): 29
+
+    我们再看看字节码具体是如何做的
+
+    0 getstatic java.lang.System.out
+    3 ldc "hi" (java.lang.String)
+    5 invokevirtual println
+    8 goto 40
+    // System.out.println("hi");，执行完之后执行返回(goto 40)
+    11 astore_1
+    12 getstatic java.lang.System.out
+    15 ldc "exception" (java.lang.String)
+    17 invokevirtual println
+    // System.out.println("exception");
+    20 getstatic java.lang.System.out
+    23 ldc "finally" (java.lang.String)
+    25 invokevirtual println
+    // return语句之前插入finally部分字节码
+    // System.out.println("finally");
+    28 return
+    29 astore_2
+    30 getstatic java.lang.System.out
+    33 ldc "finally" (java.lang.String)
+    35 invokevirtual println
+    38 aload_2
+    39 athrow
+    //当在执行0-29语句中，如果有异常抛出，则执行这段finally语句
+    //此处的astore_2(将栈顶值——即exception的地址——设给第2个local变量)和aload_2(将第2个local变量的值入栈)这两个字节码实际是不必要的，
+    //但需要注意的是，如果这2段代码去掉的话，要考虑增大操作栈(max stack)以容纳这个exception地址
+    //System.out.println("finally");
+    40 getstatic java.lang.System.out
+    43 ldc "finally" (java.lang.String)
+    45 invokevirtual println
+    // return语句之前插入finally部分字节码
+    // System.out.println("finally");
+    48 return
+
+    实际上，我们需要做的就是
+        * 在方法进入时插入方法进入代码（需要注意，对于构造函数不允许做这种处理，构造函数第一步必须调用父类的构造函数。
+        * 在每个return操作(包括return、ireturn、freturn等)之前，插入方法退出代码
+        * 定义一个捕获所有异常的处理，在处理中，插入方法退出代码（即方法以抛异常的方式终止执行）
+
+4． 实现
+    我们看看使用ObjectWeb ASM如何实现我们上面描述的功能
+    ObjectWeb ASM的字节码修改
+
+   1. ClassReader cr = new ClassReader(byteArray); //使用字节码构监一个reader
+   2. ClassWriter cw = new ClassWriter(cr, 0);//writer将基于已有的字节码进行修改
+   3. MonitorClassVisitor ca = new MonitorClassVisitor(cw);//修改处理回调类
+   4. cr.accept(ca, 0);
+
