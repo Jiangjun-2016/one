@@ -1,0 +1,45 @@
+转载（http://www.cnblogs.com/qq-361807535/p/6516953.html）
+
+0.Java NIO（New IO / Non-Blocking IO）是从JDK 1.4版本开始引入的IO API ， 可以替代标准的Java IO API 。
+    NIO与原来标准IO有同样的作用和目的，但是使用方式和读写方式完全不同，NIO支持面向缓冲区，基于通道的IO操作。
+    NIO以更高效的方式进行文件的读写操作。
+
+1.  NIO的核心组成部分：
+  　　　　·  Buffers
+  　　　　·  Channels
+  　　　　·  Selectors
+
+2.  Channel 和 Buffer
+
+  　　 在NIO中数据源以及数据的目的位置都是直接和通道（Channel）接触的。
+       Buffer作为数据的载体，从不同的管道中读取数据或者将数据写入通道。
+
+       NIO中的Buffer是和Java中的基本数据类型相对应的，每种基本数据类型都有对应的Buffer实现，除了Boolean类型：
+       　　　　　　ByteBuffer
+       　　　　　　CharBuffer
+       　　　　　　DoubleBuffer　　
+       　　　　　　FloatBuffer
+       　　　　　　IntBuffer
+       　　　　　　LongBuffer
+       　　　　　　ShortBuffer
+       　　　　　　MappedByteBuffer ：用于表示内存映射文件，后续详述。
+       　　Channel 主要有以下几个，主要包括操作文件的，操作网络的：
+       　　　　　　FileChannel
+       　　　　　　DatagramChannel
+       　　　　　　SocketChannel
+       　　　　　　ServerSocketChannel
+
+3. Selector
+  　　Selector允许单线程处理多个 Channel。比如某个应用中打开了多个链接，但是多个连接中流量都很低，用Selector可以是用少于连接数的线程来处理多个管道的连接请求任务，可以节约服务器资源，同时提高服务效率。
+
+  　　如下：这是在一个单线程中使用一个Selector处理3个Channel的图示：
+
+                    Thread （一个Selector）
+
+                    Selector （可以连接三个Channel）
+
+                    Channel Channel Channel
+
+    要使用Selector，得向Selector注册Channel，然后调用它的select()方法。
+    这个方法会一直阻塞到某个注册的通道有事件就绪。一旦这个方法返回，线程就可以处理这些事件，事件的例子有如新连接进来，数据接收等。
+
