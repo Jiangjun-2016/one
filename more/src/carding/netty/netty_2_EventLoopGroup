@@ -1,0 +1,272 @@
+转载（http://blog.csdn.net/qq924862077/article/details/52839139）
+
+0.在上一篇博客【Netty源码解析】入门示例中我们介绍了一个Netty入门的示例代码，接下来的博客我们会分析一下整个demo工程运行过程的运行机制。
+    无论在Netty应用的客户端还是服务端都首先会初始化EventLoopGroup，其封装了线程的创建，以及loop和线程的关联等内容。
+
+    EventLoopGroup group = new NioEventLoopGroup();
+
+1.接下来我们一步一步看NioEventLoopGroup在初始化过程中都做了什么事情，其源码如下：
+
+    public class NioEventLoopGroup extends MultithreadEventLoopGroup {
+        public NioEventLoopGroup() {
+            this(0);
+        }
+        public NioEventLoopGroup(int nThreads) {
+            this(nThreads, (Executor) null);
+        }
+        public NioEventLoopGroup(int nThreads, ThreadFactory threadFactory) {
+            this(nThreads, threadFactory, SelectorProvider.provider());
+        }
+        public NioEventLoopGroup(int nThreads, Executor executor) {
+            this(nThreads, executor, SelectorProvider.provider());
+        }
+        public NioEventLoopGroup(
+                int nThreads, ThreadFactory threadFactory, final SelectorProvider selectorProvider) {
+            this(nThreads, threadFactory, selectorProvider, DefaultSelectStrategyFactory.INSTANCE);
+        }
+        public NioEventLoopGroup(int nThreads, ThreadFactory threadFactory,
+            final SelectorProvider selectorProvider, final SelectStrategyFactory selectStrategyFactory) {
+            super(nThreads, threadFactory, selectorProvider, selectStrategyFactory, RejectedExecutionHandlers.reject());
+        }
+        public NioEventLoopGroup(
+                int nThreads, Executor executor, final SelectorProvider selectorProvider) {
+            this(nThreads, executor, selectorProvider, DefaultSelectStrategyFactory.INSTANCE);
+        }
+        public NioEventLoopGroup(int nThreads, Executor executor, final SelectorProvider selectorProvider,
+                                 final SelectStrategyFactory selectStrategyFactory) {
+            super(nThreads, executor, selectorProvider, selectStrategyFactory, RejectedExecutionHandlers.reject());
+        }
+        public NioEventLoopGroup(int nThreads, Executor executor, EventExecutorChooserFactory chooserFactory,
+                                 final SelectorProvider selectorProvider,
+                                 final SelectStrategyFactory selectStrategyFactory) {
+            super(nThreads, executor, chooserFactory, selectorProvider, selectStrategyFactory,
+                    RejectedExecutionHandlers.reject());
+        }
+        public NioEventLoopGroup(int nThreads, Executor executor, EventExecutorChooserFactory chooserFactory,
+                                 final SelectorProvider selectorProvider,
+                                 final SelectStrategyFactory selectStrategyFactory,
+                                 final RejectedExecutionHandler rejectedExecutionHandler) {
+            super(nThreads, executor, chooserFactory, selectorProvider, selectStrategyFactory, rejectedExecutionHandler);
+        }
+        public void setIoRatio(int ioRatio) {
+            for (EventExecutor e: this) {
+                ((NioEventLoop) e).setIoRatio(ioRatio);
+            }
+        }
+        public void rebuildSelectors() {
+            for (EventExecutor e: this) {
+                ((NioEventLoop) e).rebuildSelector();
+            }
+        }
+        @Override
+        protected EventLoop newChild(Executor executor, Object... args) throws Exception {
+            return new NioEventLoop(this, executor, (SelectorProvider) args[0],
+                ((SelectStrategyFactory) args[1]).newSelectStrategy(), (RejectedExecutionHandler) args[2]);
+        }
+    }
+
+2.由上面的源码我们了解到NioEventLoopGroup构造函数初始化的结果是调用父类MultithreadEventLoopGroup的构造函数，接下来我们看一下MultithreadEventLoopGroup的构造函数做了什么事情。
+
+    public abstract class MultithreadEventExecutorGroup extends AbstractEventExecutorGroup {
+
+        private final EventExecutor[] children;
+        private final Set<EventExecutor> readonlyChildren;
+        private final AtomicInteger terminatedChildren = new AtomicInteger();
+        private final Promise<?> terminationFuture = new DefaultPromise(GlobalEventExecutor.INSTANCE);
+        private final EventExecutorChooserFactory.EventExecutorChooser chooser;
+
+
+        protected MultithreadEventExecutorGroup(int nThreads, ThreadFactory threadFactory, Object... args) {
+            this(nThreads, threadFactory == null ? null : new ThreadPerTaskExecutor(threadFactory), args);
+        }
+
+        protected MultithreadEventExecutorGroup(int nThreads, Executor executor, Object... args) {
+            this(nThreads, executor, DefaultEventExecutorChooserFactory.INSTANCE, args);
+        }
+
+        protected MultithreadEventExecutorGroup(int nThreads, Executor executor,
+                                                EventExecutorChooserFactory chooserFactory, Object... args) {
+            if (nThreads <= 0) {
+                throw new IllegalArgumentException(String.format("nThreads: %d (expected: > 0)", nThreads));
+            }
+
+            if (executor == null) {
+                executor = new ThreadPerTaskExecutor(newDefaultThreadFactory());
+            }
+
+            children = new EventExecutor[nThreads];
+
+            for (int i = 0; i < nThreads; i ++) {
+                boolean success = false;
+                try {
+                    children[i] = newChild(executor, args);
+                    success = true;
+                } catch (Exception e) {
+                    throw new IllegalStateException("failed to create a child event loop", e);
+                } finally {
+                    if (!success) {
+                        for (int j = 0; j < i; j ++) {
+                            children[j].shutdownGracefully();
+                        }
+
+                        for (int j = 0; j < i; j ++) {
+                            EventExecutor e = children[j];
+                            try {
+                                while (!e.isTerminated()) {
+                                    e.awaitTermination(Integer.MAX_VALUE, TimeUnit.SECONDS);
+                                }
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            chooser = chooserFactory.newChooser(children);
+
+            final FutureListener<Object> terminationListener = new FutureListener<Object>() {
+                @Override
+                public void operationComplete(Future<Object> future) throws Exception {
+                    if (terminatedChildren.incrementAndGet() == children.length) {
+                        terminationFuture.setSuccess(null);
+                    }
+                }
+            };
+
+            for (EventExecutor e: children) {
+                e.terminationFuture().addListener(terminationListener);
+            }
+
+            Set<EventExecutor> childrenSet = new LinkedHashSet<EventExecutor>(children.length);
+            Collections.addAll(childrenSet, children);
+            readonlyChildren = Collections.unmodifiableSet(childrenSet);
+        }
+
+        protected ThreadFactory newDefaultThreadFactory() {
+            return new DefaultThreadFactory(getClass());
+        }
+
+        @Override
+        public EventExecutor next() {
+            return chooser.next();
+        }
+
+        @Override
+        public Iterator<EventExecutor> iterator() {
+            return readonlyChildren.iterator();
+        }
+
+        public final int executorCount() {
+            return children.length;
+        }
+
+        protected abstract EventExecutor newChild(Executor executor, Object... args) throws Exception;
+
+        @Override
+        public Future<?> shutdownGracefully(long quietPeriod, long timeout, TimeUnit unit) {
+            for (EventExecutor l: children) {
+                l.shutdownGracefully(quietPeriod, timeout, unit);
+            }
+            return terminationFuture();
+        }
+
+        @Override
+        public Future<?> terminationFuture() {
+            return terminationFuture;
+        }
+
+        @Override
+        @Deprecated
+        public void shutdown() {
+            for (EventExecutor l: children) {
+                l.shutdown();
+            }
+        }
+
+        @Override
+        public boolean isShuttingDown() {
+            for (EventExecutor l: children) {
+                if (!l.isShuttingDown()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public boolean isShutdown() {
+            for (EventExecutor l: children) {
+                if (!l.isShutdown()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            for (EventExecutor l: children) {
+                if (!l.isTerminated()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit)
+                throws InterruptedException {
+            long deadline = System.nanoTime() + unit.toNanos(timeout);
+            loop: for (EventExecutor l: children) {
+                for (;;) {
+                    long timeLeft = deadline - System.nanoTime();
+                    if (timeLeft <= 0) {
+                        break loop;
+                    }
+                    if (l.awaitTermination(timeLeft, TimeUnit.NANOSECONDS)) {
+                        break;
+                    }
+                }
+            }
+            return isTerminated();
+        }
+    }
+
+    从上面代码的构造函数中我们发现了真正处理功能
+    （1）executor = new ThreadPerTaskExecutor(newDefaultThreadFactory()); 首先创建一个单线程执行的线程池
+    （2）children = new EventExecutor[nThreads];  创建处理器两倍数目的处理线程数组
+    （3）children[i] = newChild(executor, args)  实例化线程数组，具体实现在NioEventLoopGroup
+
+    @Override
+        protected EventLoop newChild(Executor executor, Object... args) throws Exception {
+            return new NioEventLoop(this, executor, (SelectorProvider) args[0],
+                ((SelectStrategyFactory) args[1]).newSelectStrategy(), (RejectedExecutionHandler) args[2]);
+        }
+
+
+    这样EventLoopGroup的主要功能就完成了，其主要机制就是创建了一定数目的NioEventLoop。（很多个NioEventLoop）
+
+2.NioEventLoopGroup类图
+
+NioEventLoopGroup
+    MultithreadEventLoopGroup
+        MultithreadEventExecutorGroup
+            AbstractEventExecutorGroup
+                Object
+
+        EventLoopGroup
+            EventExecutorGroup
+                ScheduledExecutorService
+                Iterable<EventExecutor>
+                    ExecutorService
+                        Executor(void execute(Runnable command);)
+
+
+
+
+
+
+
+
