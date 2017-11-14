@@ -1,0 +1,193 @@
+转载（http://blog.csdn.net/qq924862077/article/details/52839139）
+
+0.首先客户端连接到服务端时服务端会开启一个线程，不断的监听客户端的操作。
+
+1.这个线程的执行操作在NioEventLoop的run方法中，其实操作是在processSelectedKeys中，监听是否进行读操作
+    protected void run() {
+            for (;;) {
+                try {
+                    switch (selectStrategy.calculateStrategy(selectNowSupplier, hasTasks())) {
+                        case SelectStrategy.CONTINUE:
+                            continue;
+                        case SelectStrategy.SELECT:
+                            select(wakenUp.getAndSet(false));
+                            if (wakenUp.get()) {
+                                selector.wakeup();
+                            }
+                        default:
+                            // fallthrough
+                    }
+
+                    cancelledKeys = 0;
+                    needsToSelectAgain = false;
+                    final int ioRatio = this.ioRatio;
+                    if (ioRatio == 100) {
+                        processSelectedKeys();
+                        runAllTasks();
+                    } else {
+                        final long ioStartTime = System.nanoTime();
+                        processSelectedKeys();
+                        final long ioTime = System.nanoTime() - ioStartTime;
+                        runAllTasks(ioTime * (100 - ioRatio) / ioRatio);
+                    }
+
+                    if (isShuttingDown()) {
+                        closeAll();
+                        if (confirmShutdown()) {
+                            break;
+                        }
+                    }
+                }
+            }
+    }
+
+    private void processSelectedKeys() {
+            if (selectedKeys != null) {
+                processSelectedKeysOptimized(selectedKeys.flip());
+            } else {
+                processSelectedKeysPlain(selector.selectedKeys());
+            }
+    }
+
+    判断selectedKeys数组中是否有值，其实就是read，write或accept事件
+    private void processSelectedKeysOptimized(SelectionKey[] selectedKeys) {
+            for (int i = 0;; i ++) {
+                final SelectionKey k = selectedKeys[i];
+                if (k == null) {
+                    break;
+                }
+                selectedKeys[i] = null;
+
+                final Object a = k.attachment();
+
+                if (a instanceof AbstractNioChannel) {
+                    processSelectedKey(k, (AbstractNioChannel) a);
+                } else {
+                    @SuppressWarnings("unchecked")
+                    NioTask<SelectableChannel> task = (NioTask<SelectableChannel>) a;
+                    processSelectedKey(k, task);
+                }
+            }
+    }
+
+    主要判断int readyOps = k.readyOps();拿到的值是否是SelectionKey.OP_READ | SelectionKey.OP_ACCEPT
+    private void processSelectedKey(SelectionKey k, AbstractNioChannel ch) {
+            final AbstractNioChannel.NioUnsafe unsafe = ch.unsafe();
+            if (!k.isValid()) {
+                final EventLoop eventLoop;
+                try {
+                    eventLoop = ch.eventLoop();
+                } catch (Throwable ignored) {
+
+                }
+
+                if (eventLoop != this || eventLoop == null) {
+                    return;
+                }
+
+                unsafe.close(unsafe.voidPromise());
+                return;
+            }
+
+            try {
+                int readyOps = k.readyOps();
+
+                if ((readyOps & (SelectionKey.OP_READ | SelectionKey.OP_ACCEPT)) != 0 || readyOps == 0) {
+                    unsafe.read();
+                    if (!ch.isOpen()) {
+                        return;
+                    }
+                }
+                if ((readyOps & SelectionKey.OP_WRITE) != 0) {
+
+                    ch.unsafe().forceFlush();
+                }
+                if ((readyOps & SelectionKey.OP_CONNECT) != 0) {
+                    int ops = k.interestOps();
+                    ops &= ~SelectionKey.OP_CONNECT;
+                    k.interestOps(ops);
+
+                    unsafe.finishConnect();
+                }
+            } catch (CancelledKeyException ignored) {
+                unsafe.close(unsafe.voidPromise());
+            }
+    }
+
+    如果int readyOps = k.readyOps();拿到的值是SelectionKey.OP_READ | SelectionKey.OP_ACCEPT就执行unsafe.read();
+    具体实现在AbstractNioByteChannel执行read操作
+    @Override
+    public final void read() {
+        final ChannelConfig config = config();
+        final ChannelPipeline pipeline = pipeline();
+        final ByteBufAllocator allocator = config.getAllocator();
+        final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
+        allocHandle.reset(config);
+
+        ByteBuf byteBuf = null;
+        boolean close = false;
+        try {
+            do {
+                byteBuf = allocHandle.allocate(allocator);
+                allocHandle.lastBytesRead(doReadBytes(byteBuf));
+                if (allocHandle.lastBytesRead() <= 0) {
+                    // nothing was read. release the buffer.
+                    byteBuf.release();
+                    byteBuf = null;
+                    close = allocHandle.lastBytesRead() < 0;
+                    break;
+                }
+                allocHandle.incMessagesRead(1);
+                readPending = false;
+                pipeline.fireChannelRead(byteBuf);
+                byteBuf = null;
+                } while (allocHandle.continueReading());
+
+            allocHandle.readComplete();
+            pipeline.fireChannelReadComplete();
+
+            if (close) {
+                closeOnRead(pipeline);
+            }
+        } catch (Throwable t) {
+            handleReadException(pipeline, byteBuf, t, close, allocHandle);
+        }
+    }
+
+    读取操作是在doReadBytes(byteBuf)中，具体实现是在NioSocketChannel中
+    @Override
+        protected int doReadBytes(ByteBuf byteBuf) throws Exception {
+            final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
+            allocHandle.attemptedBytesRead(byteBuf.writableBytes());
+            return byteBuf.writeBytes(javaChannel(), allocHandle.attemptedBytesRead());
+    }
+
+    接下来的操作是在AbstractByteBuf的writeBytes中进行。
+    @Override
+        public int writeBytes(ScatteringByteChannel in, int length) throws IOException {
+            ensureAccessible();
+            ensureWritable(length);
+            int writtenBytes = setBytes(writerIndex, in, length);
+            if (writtenBytes > 0) {
+                writerIndex += writtenBytes;
+            }
+            return writtenBytes;
+    }
+
+    读取数据操作是在setBytes函数中进行的，一般实现是在PooledUnsafeDirectByteBuf类中
+    @Override
+       public int setBytes(int index, ScatteringByteChannel in, int length) throws IOException {
+           checkIndex(index, length);
+           ByteBuffer tmpBuf = internalNioBuffer();
+           index = idx(index);
+           tmpBuf.clear().position(index).limit(index + length);
+           try {
+               return in.read(tmpBuf);
+           } catch (ClosedChannelException ignored) {
+               return -1;
+           }
+    }
+
+    在这里我们可以看到操作in.read(tmpBuf)，这个操作就是NIO的读取数据操作了，in是SocketChannel对象，将数据读取到缓存中去，完成数据的读取过程。
+
+
