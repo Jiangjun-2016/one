@@ -1,0 +1,134 @@
+转载（http://blog.csdn.net/qq924862077/article/details/52839139）
+
+0.我们介绍一下客户端连接服务端的过程。
+
+    ChannelFuture future = boostrap.connect("127.0.0.1", 8080).sync();
+
+1.  调用BootStrap的connect函数
+    public ChannelFuture connect(String inetHost, int inetPort) {
+            return connect(InetSocketAddress.createUnresolved(inetHost, inetPort));
+    }
+    public ChannelFuture connect(SocketAddress remoteAddress) {
+            if (remoteAddress == null) {
+                throw new NullPointerException("remoteAddress");
+            }
+
+            validate();
+            return doResolveAndConnect(remoteAddress, config.localAddress());
+    }
+
+    调用doResolveAndConnect函数
+    private ChannelFuture doResolveAndConnect(final SocketAddress remoteAddress, final SocketAddress localAddress) {
+        ........
+        return doResolveAndConnect0(channel, remoteAddress, localAddress, channel.newPromise());
+        ........
+    }
+
+    private ChannelFuture doResolveAndConnect0(final Channel channel, SocketAddress remoteAddress,
+                                                   final SocketAddress localAddress, final ChannelPromise promise)
+        ........
+
+        doConnect(remoteAddress, localAddress, promise);
+
+        ........
+
+    }
+
+    调用doConnect函数时会同时开启一个线程，用来处理客户端的操作。
+    private static void doConnect(
+                final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise connectPromise) {
+
+            // This method is invoked before channelRegistered() is triggered.  Give user handlers a chance to set up
+            // the pipeline in its channelRegistered() implementation.
+            final Channel channel = connectPromise.channel();
+            channel.eventLoop().execute(new Runnable() {
+                @Override
+                public void run() {
+                    if (localAddress == null) {
+                        channel.connect(remoteAddress, connectPromise);
+                    } else {
+                        channel.connect(remoteAddress, localAddress, connectPromise);
+                    }
+                    connectPromise.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+                }
+            });
+    }
+
+2.AbstractChannel的connect函数
+    @Override
+    public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) {
+            return pipeline.connect(remoteAddress, localAddress, promise);
+    }
+    @Override
+    public final ChannelFuture connect(
+                SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) {
+            return tail.connect(remoteAddress, localAddress, promise);
+    }
+    private void invokeConnect(SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) {
+            if (invokeHandler()) {
+                try {
+                    ((ChannelOutboundHandler) handler()).connect(this, remoteAddress, localAddress, promise);
+                } catch (Throwable t) {
+                    notifyOutboundHandlerException(t, promise);
+                }
+            } else {
+                connect(remoteAddress, localAddress, promise);
+            }
+    }
+
+    HeadContext的connect函数
+    @Override
+    public void connect(
+                    ChannelHandlerContext ctx,
+               SocketAddress remoteAddress, SocketAddress localAddress,
+                    ChannelPromise promise) throws Exception {
+      unsafe.connect(remoteAddress, localAddress, promise);
+    }
+
+    AbstractUnsafe函数的connect函数
+    @Override
+    public final void connect(
+                    final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise promise) {
+        .......
+
+        if (doConnect(remoteAddress, localAddress)) {
+            fulfillConnectPromise(promise, wasActive);
+        }
+
+        .......
+    }
+
+    调用NioSocketChannle的doConnect函数
+    @Override
+        protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
+            if (localAddress != null) {
+                doBind0(localAddress);
+            }
+
+            boolean success = false;
+            try {
+                boolean connected = javaChannel().connect(remoteAddress);
+                if (!connected) {
+                    selectionKey().interestOps(SelectionKey.OP_CONNECT);
+                }
+                success = true;
+                return connected;
+            } finally {
+                if (!success) {
+                    doClose();
+                }
+            }
+    }
+
+    或许执行doBind0函数
+    private void doBind0(SocketAddress localAddress) throws Exception {
+            if (PlatformDependent.javaVersion() >= 7) {
+                javaChannel().bind(localAddress);
+            } else {
+                javaChannel().socket().bind(localAddress);
+            }
+    }
+
+    javaChannle()函数获得的就是SocketChannle对象，这样就完成了客户端连接服务端的操作。
+
+
