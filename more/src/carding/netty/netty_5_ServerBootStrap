@@ -1,0 +1,90 @@
+转载（http://blog.csdn.net/qq924862077/article/details/52839139）
+
+0.  BootStrap总结起来有两个主要的功能，
+      （1）将调用父类AbstractBootStrap中的initAndRegister函数将NioSocketChannel注册到Selector，具体实现是在AbstractNioChannel的doRegister函数中。
+      （2）调用自身函数doConnect连接到Server，并在线程池中执行。
+    总体来说ServerBootStrap有两个主要功能：
+      （1）调用父类AbstractBootStrap的initAndregister函数将NioServerSocketChannel注册到Selector中，上一篇博客中我们已经介绍了。
+      （2）调用父类的doBind0函数绑定端口，并在线程池中执行。
+
+1.ServerBootStrap使用如下：
+    ServerBootstrap serverBootstrap = new ServerBootstrap().group(bossGroup, workerGroup).channel(NioServerSocketChannel.class)
+            .localAddress(port).childHandler(new ChannelInitializer<SocketChannel>() {
+                @Override
+                protected void initChannel(SocketChannel ch) throws Exception {
+                     ch.pipeline().addLast("decoder", new StringDecoder());
+                        ch.pipeline().addLast("encoder", new StringEncoder());
+                        ch.pipeline().addLast(new ServerHandler());
+                }
+            }).option(ChannelOption.SO_BACKLOG, 128)
+            .childOption(ChannelOption.SO_KEEPALIVE, true);
+    ChannelFuture future = serverBootstrap.bind(port).sync();
+
+    在构造函数中只是一些参数值的设置，真正开始操作的地方是调用 serverBootstrap.bind(port).sync()，从bind函数开始来实现我们刚才讲的两个主要功能。
+    首先绑定端口函数调用。
+    public ChannelFuture bind(int inetPort) {
+            return bind(new InetSocketAddress(inetPort));
+        }
+         public ChannelFuture bind(SocketAddress localAddress) {
+            validate();
+            if (localAddress == null) {
+                throw new NullPointerException("localAddress");
+            }
+            return doBind(localAddress);
+        }
+        private ChannelFuture doBind(final SocketAddress localAddress) {
+            final ChannelFuture regFuture = initAndRegister();
+            final Channel channel = regFuture.channel();
+            if (regFuture.cause() != null) {
+                return regFuture;
+            }
+
+            if (regFuture.isDone()) {
+                // At this point we know that the registration was complete and successful.
+                ChannelPromise promise = channel.newPromise();
+                doBind0(regFuture, channel, localAddress, promise);
+                return promise;
+            } else {
+                // Registration future is almost always fulfilled already, but just in case it's not.
+                final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
+                regFuture.addListener(new ChannelFutureListener() {
+                    @Override
+                    public void operationComplete(ChannelFuture future) throws Exception {
+                        Throwable cause = future.cause();
+                        if (cause != null) {
+                            // Registration on the EventLoop failed so fail the ChannelPromise directly to not cause an
+                            // IllegalStateException once we try to access the EventLoop of the Channel.
+                            promise.setFailure(cause);
+                        } else {
+                            // Registration was successful, so set the correct executor to use.
+                            // See https://github.com/netty/netty/issues/2586
+                            promise.registered();
+
+                            doBind0(regFuture, channel, localAddress, promise);
+                        }
+                    }
+                });
+                return promise;
+            }
+    }
+
+    在绑定端口操作是我们会看到如下操作final ChannelFuture regFuture = initAndRegister();，
+    initAndRegister就是实现Channel注册到Selector中，前一篇博客中我们已经介绍。
+    接下来我们介绍doBind0函数，服务端绑定端口到本机服务器上。
+    private static void doBind0(
+                final ChannelFuture regFuture, final Channel channel,
+                final SocketAddress localAddress, final ChannelPromise promise) {
+
+            channel.eventLoop().execute(new Runnable() {
+                @Override
+                public void run() {
+                    if (regFuture.isSuccess()) {
+                        channel.bind(localAddress, promise).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+                    } else {
+                        promise.setFailure(regFuture.cause());
+                    }
+                }
+            });
+    }
+
+    通过上面的代码我们知道doBind0的操作就是创建一个新线程，放到线程池中操作，通过Channel来绑定地址。
