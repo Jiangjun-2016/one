@@ -1,0 +1,74 @@
+转载（http://blog.csdn.net/qq924862077/article/details/52839139）
+
+0.  上一篇我们详细介绍一下ChannelPipeline及其实现类。
+    接下来我们分析一下其实现类DefaultChannelPipeline具体实现了哪些功能。
+
+1.  之前我们已经了解过DefaultChannelPipeline其实是一个ChannelHandlerContext的循环链表，
+    对于网络数据的接收处理以及处理发送都在ChannelHandlerContext的实现类中，其具体操作我们接下来会详细分析。
+    在DefaultChannelPipeline定义变量中我们可以看到这两个变量，这是一个链表头和尾。
+
+    final AbstractChannelHandlerContext head;
+    final AbstractChannelHandlerContext tail;
+
+
+2.  接下来很多操作就是和这个链表的操作有关了，为什么要有个这个循环链表呢，
+    其实这也与数据的发送与接收有关系，在ChannelHandlerContex中我们会详细分析。
+    数据在ChannelPipeline中的传递处理顺序如下：
+    * <pre>
+     *                                                 I/O Request
+     *                                            via {@link Channel} or
+     *                                        {@link ChannelHandlerContext}
+     *                                                      |
+     *  +---------------------------------------------------+---------------+
+     *  |                           ChannelPipeline         |               |
+     *  |                                                  \|/              |
+     *  |    +---------------------+            +-----------+----------+    |
+     *  |    | Inbound Handler  N  |            | Outbound Handler  1  |    |
+     *  |    +----------+----------+            +-----------+----------+    |
+     *  |              /|\                                  |               |
+     *  |               |                                  \|/              |
+     *  |    +----------+----------+            +-----------+----------+    |
+     *  |    | Inbound Handler N-1 |            | Outbound Handler  2  |    |
+     *  |    +----------+----------+            +-----------+----------+    |
+     *  |              /|\                                  .               |
+     *  |               .                                   .               |
+     *  | ChannelHandlerContext.fireIN_EVT() ChannelHandlerContext.OUT_EVT()|
+     *  |        [ method call]                       [method call]         |
+     *  |               .                                   .               |
+     *  |               .                                  \|/              |
+     *  |    +----------+----------+            +-----------+----------+    |
+     *  |    | Inbound Handler  2  |            | Outbound Handler M-1 |    |
+     *  |    +----------+----------+            +-----------+----------+    |
+     *  |              /|\                                  |               |
+     *  |               |                                  \|/              |
+     *  |    +----------+----------+            +-----------+----------+    |
+     *  |    | Inbound Handler  1  |            | Outbound Handler  M  |    |
+     *  |    +----------+----------+            +-----------+----------+    |
+     *  |              /|\                                  |               |
+     *  +---------------+-----------------------------------+---------------+
+     *                  |                                  \|/
+     *  +---------------+-----------------------------------+---------------+
+     *  |               |                                   |               |
+     *  |       [ Socket.read() ]                    [ Socket.write() ]     |
+     *  |                                                                   |
+     *  |  Netty Internal I/O Threads (Transport Implementation)            |
+     *  +-------------------------------------------------------------------+
+     * </pre>
+
+     读操作是从head开始。
+     @Override
+     public ChannelPipeline fireChannelRead(Object msg) {
+         head.fireChannelRead(msg);
+         return this;
+     }
+
+     写操作是从tail开始。
+     @Override
+     public ChannelFuture write(Object msg) {
+         return tail.write(msg);
+     }
+
+     其实就是通过客户端和服务端的DefaultChannelPipe组成一个数据环，环中的每个点为数据处理操作，
+     在完成客户端和服务器端数据传输的同时也通过节点完成数据的处理操作。
+
+

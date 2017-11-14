@@ -1,0 +1,70 @@
+转载（http://blog.csdn.net/qq924862077/article/details/52839139）
+
+0.  之前我们只是大体介绍了ChannelPipeline相关的知识，其实介绍的并不详细，接下来我们详细介绍一下ChannelPipeline及其实现类。
+
+1.ChannelPipeline的结构图：
+
+    DefaultChannelPipeline
+        ChannelPipeline
+            ChannelInboundInvoker
+            ChannelOutboundInvoker
+
+    这张ChannelPipeline的结构图我们应该是看到过的，其实在ChannelPipeline接口中只是覆盖了ChannelInboundInvoker和ChannelOutboundInvoker两个接口的方法。
+    上一篇文章中我们了解到DefaultChannelPipeline其实是ChannelHandlerContext的双向链表，
+    因此接口ChannelPipeline中定义的抽象方法很多部分是有关ChannelHanderContext添加到双向链表中的操作的。
+
+    ChannelPipeline addFirst(String name, ChannelHandler handler);
+    ChannelPipeline addFirst(EventExecutorGroup group, String name, ChannelHandler handler);
+        ChannelPipeline addLast(String name, ChannelHandler handler);
+        ChannelPipeline addLast(EventExecutorGroup group, String name, ChannelHandler handler);
+        ChannelPipeline addBefore(String baseName, String name, ChannelHandler handler);
+        ChannelPipeline addBefore(EventExecutorGroup group, String baseName, String name, ChannelHandler handler);
+        ChannelPipeline addAfter(String baseName, String name, ChannelHandler handler);
+        ChannelPipeline addAfter(EventExecutorGroup group, String baseName, String name, ChannelHandler handler);
+        ChannelPipeline addFirst(ChannelHandler... handlers);
+        ChannelPipeline addFirst(EventExecutorGroup group, ChannelHandler... handlers);
+        ChannelPipeline addLast(ChannelHandler... handlers);
+        ChannelPipeline addLast(EventExecutorGroup group, ChannelHandler... handlers);
+        ChannelPipeline remove(ChannelHandler handler);
+        ChannelHandler remove(String name);
+        <T extends ChannelHandler> T remove(Class<T> handlerType);
+        ChannelHandler removeFirst();
+        ChannelHandler removeLast();
+        ChannelPipeline replace(ChannelHandler oldHandler, String newName, ChannelHandler newHandler);
+        ChannelHandler replace(String oldName, String newName, ChannelHandler newHandler);
+        <T extends ChannelHandler> T replace(Class<T> oldHandlerType, String newName,
+        ChannelHandler first();
+        ChannelHandlerContext firstContext();
+        ChannelHandler last();
+        ChannelHandlerContext lastContext();
+        ChannelHandler get(String name);
+        <T extends ChannelHandler> T get(Class<T> handlerType);
+        ChannelHandlerContext context(ChannelHandler handler);
+        ChannelHandlerContext context(String name);
+        ChannelHandlerContext context(Class<? extends ChannelHandler> handlerType);
+        Channel channel();
+        List<String> names();
+        Map<String, ChannelHandler> toMap();
+
+2.ChannelPipeline接口中其他的抽象方法就是覆盖的ChannelInboundInvoker和ChannelOutboundInvoker两个接口的方法了
+    @Override
+    ChannelPipeline fireChannelRegistered();
+    @Override
+    ChannelPipeline fireChannelUnregistered();
+    @Override
+    ChannelPipeline fireChannelActive();
+    @Override
+    ChannelPipeline fireChannelInactive();
+    @Override
+    ChannelPipeline fireExceptionCaught(Throwable cause);
+    @Override
+    ChannelPipeline fireUserEventTriggered(Object event);
+    @Override
+    ChannelPipeline fireChannelRead(Object msg);
+    @Override
+    ChannelPipeline fireChannelReadComplete();
+    @Override
+    ChannelPipeline fireChannelWritabilityChanged();
+    @Override
+    ChannelPipeline flush();
+
