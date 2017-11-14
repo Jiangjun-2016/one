@@ -1,0 +1,175 @@
+转载（http://blog.csdn.net/qq924862077/article/details/52839139）
+
+0.BootStrap(引导程序)是客户端的启动类，其主要功能就是设置必要的参数然后启动客户端。
+
+1.  实现如下：
+    Bootstrap b = new Bootstrap();
+    b.group(group)
+     .channel(NioSocketChannel.class)
+     .option(ChannelOption.TCP_NODELAY, true)
+     .handler(new ChannelInitializer<SocketChannel>() {
+         @Override
+         public void initChannel(SocketChannel ch) throws Exception {
+             ChannelPipeline p = ch.pipeline();
+             p.addLast("decoder", new StringDecoder());
+             p.addLast("encoder", new StringEncoder());
+             p.addLast(new ClientHandler());
+         }
+     });
+
+    ChannelFuture future = b.connect(HOST, PORT).sync();
+
+    首先是创建实例，然后设置group、channel、option和handler。
+    接下来就是连接服务器，主要的操作都在这部分进行操作。
+
+    public ChannelFuture connect(String inetHost, int inetPort) {
+            return connect(InetSocketAddress.createUnresolved(inetHost, inetPort));
+    }
+    public ChannelFuture connect(InetAddress inetHost, int inetPort) {
+        return connect(new InetSocketAddress(inetHost, inetPort));
+    }
+    public ChannelFuture connect(SocketAddress remoteAddress) {
+        if (remoteAddress == null) {
+            throw new NullPointerException("remoteAddress");
+        }
+        validate();
+        return doResolveAndConnect(remoteAddress, config.localAddress());
+    }
+
+    接下来的操作是在doResolveAndConnect中，主要有两个重要的操作：
+    一是调用父类的initAndregister函数将NioServerSocketChannel注册到Selector中，具体实现是在AbstractNioChannel的doRegister函数中，
+    二是调用自身函数doConnect连接到Server，并在线程池中执行。具体操作如下：
+
+    private ChannelFuture doResolveAndConnect(final SocketAddress remoteAddress, final SocketAddress localAddress) {
+           final ChannelFuture regFuture = initAndRegister();
+           final Channel channel = regFuture.channel();
+
+       if (regFuture.isDone()) {
+           if (!regFuture.isSuccess()) {
+               return regFuture;
+           }
+           return doResolveAndConnect0(channel, remoteAddress, localAddress, channel.newPromise());
+       } else {
+           // Registration future is almost always fulfilled already, but just in case it's not.
+           final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
+           regFuture.addListener(new ChannelFutureListener() {
+               @Override
+               public void operationComplete(ChannelFuture future) throws Exception {
+                   // Direclty obtain the cause and do a null check so we only need one volatile read in case of a
+                   // failure.
+                   Throwable cause = future.cause();
+                   if (cause != null) {
+                       // Registration on the EventLoop failed so fail the ChannelPromise directly to not cause an
+                       // IllegalStateException once we try to access the EventLoop of the Channel.
+                       promise.setFailure(cause);
+                   } else {
+                       // Registration was successful, so set the correct executor to use.
+                       // See https://github.com/netty/netty/issues/2586
+                       promise.registered();
+                       doResolveAndConnect0(channel, remoteAddress, localAddress, promise);
+                   }
+               }
+           });
+           return promise;
+       }
+    }
+
+    首先是执行final ChannelFuture regFuture = initAndRegister();调用父类的initAndRegister()函数，实现将Channel注册到Selector中，
+    实现如下，调用config().group().register(channel)，实现将Channel注册到Selector中。
+
+    final ChannelFuture initAndRegister() {
+         Channel channel = null;
+         try {
+             channel = channelFactory.newChannel();
+             init(channel);
+         } catch (Throwable t) {
+             if (channel != null) {
+                 channel.unsafe().closeForcibly();
+             }
+             return new DefaultChannelPromise(channel, GlobalEventExecutor.INSTANCE).setFailure(t);
+         }
+
+         ChannelFuture regFuture = config().group().register(channel);
+         if (regFuture.cause() != null) {
+             if (channel.isRegistered()) {
+                 channel.close();
+             } else {
+                 channel.unsafe().closeForcibly();
+             }
+         }
+         return regFuture;
+    }
+
+    接下的操作是将NioSocketChannel连接到Server端，实现的函数是doResolveAndConnect0，看如下代码，连接的具体实现在doContect中。
+
+    private ChannelFuture doResolveAndConnect0(final Channel channel, SocketAddress remoteAddress,
+                                                  final SocketAddress localAddress, final ChannelPromise promise) {
+           try {
+               final EventLoop eventLoop = channel.eventLoop();
+               final AddressResolver<SocketAddress> resolver = this.resolver.getResolver(eventLoop);
+
+               if (!resolver.isSupported(remoteAddress) || resolver.isResolved(remoteAddress)) {
+                   // Resolver has no idea about what to do with the specified remote address or it's resolved already.
+                   doConnect(remoteAddress, localAddress, promise);
+                   return promise;
+               }
+
+               final Future<SocketAddress> resolveFuture = resolver.resolve(remoteAddress);
+
+               if (resolveFuture.isDone()) {
+                   final Throwable resolveFailureCause = resolveFuture.cause();
+
+                   if (resolveFailureCause != null) {
+                       // Failed to resolve immediately
+                       channel.close();
+                       promise.setFailure(resolveFailureCause);
+                   } else {
+                       // Succeeded to resolve immediately; cached? (or did a blocking lookup)
+                       doConnect(resolveFuture.getNow(), localAddress, promise);
+                   }
+                   return promise;
+               }
+
+               // Wait until the name resolution is finished.
+               resolveFuture.addListener(new FutureListener<SocketAddress>() {
+                   @Override
+                   public void operationComplete(Future<SocketAddress> future) throws Exception {
+                       if (future.cause() != null) {
+                           channel.close();
+                           promise.setFailure(future.cause());
+                       } else {
+                           doConnect(future.getNow(), localAddress, promise);
+                       }
+                   }
+               });
+           } catch (Throwable cause) {
+               promise.tryFailure(cause);
+           }
+           return promise;
+    }
+
+    客户端连接到服务端的操作在doConnect中，发现在EventLoop线程池中执行线程，Channel去连接服务器。
+
+    private static void doConnect(
+               final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise connectPromise) {
+
+           // This method is invoked before channelRegistered() is triggered.  Give user handlers a chance to set up
+           // the pipeline in its channelRegistered() implementation.
+           final Channel channel = connectPromise.channel();
+           channel.eventLoop().execute(new Runnable() {
+               @Override
+               public void run() {
+                   if (localAddress == null) {
+                       channel.connect(remoteAddress, connectPromise);
+                   } else {
+                       channel.connect(remoteAddress, localAddress, connectPromise);
+                   }
+                   connectPromise.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+               }
+           });
+    }
+
+    BootStrap总结起来有两个主要的功能，
+    （1）将调用父类AbstractBootStrap中的initAndRegister函数将NioSocketChannel注册到Selector，具体实现是在AbstractNioChannel的doRegister函数中。
+    （2）调用自身函数doConnect连接到Server，并在线程池中执行。
+
