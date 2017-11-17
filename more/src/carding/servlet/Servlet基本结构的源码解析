@@ -1,0 +1,463 @@
+转载（http://blog.csdn.net/yuhongye111/article/details/38946909）
+Servlet基本结构的源码解析
+0.    如何写一个Servlet类？围绕这个问题，可以看一下Servlet的类结构。
+    首先Servlet类也是一个Java类，只不过这个类比较特殊，它不能单独运行，必须要依托Servlet容器才能运行，Servlet类是一个组件，供Servlet引擎调用。
+    既然是这样，那么Servlet类和Servlet引擎必然要遵循一套规范，以约束彼此的行为，遵循规范编写的Servlet类可以运行在任何符合规范的Servlet引擎上。
+    那我们就看看，如何编写一个符合规范的Servlet。
+    首先看一下要编写一个Servlet基本类图的结构（图是从网上找的）：
+
+1.  其中Servlet接口是所有Servlet的父接口，Servlet规范为了方便实现Servlet类，
+    提供了一个抽象类GenericServlet，它提供了Servlet的默认实现，可以通过继承自GenericServlet类来简化编程。
+    Servlet主要是处理Http请求的，所以有提供了HttpServlet，它继承自GenericServlet，一般来说，我们编写的大部分Servlet都继承自HttpServlet。
+    在上边的类图结构中，ServletConfig接口封装了代表Servlet容器的对象（ServletContext）,和Servlet初始化信息，为了方便编程GenericServlet实现了此接口。
+    在下面的源码分析中有详细的解释。
+
+2.  Servlet的生命周期
+    Servlet相当与Servlet容器的组件，Servlet接口定义了三个方法用于实现Servlet的声明周期，分别是：
+    （1）初始化init(ServletConfig config)：每个Servlet只能初始化一次，初始化的时候，Servlet引擎将一个ServletConfig对象传递进来，里面包含了这个Servlet的初始化参数，
+        具体的Servlet类应该使用一个私有引用保存这个config。
+        Servlet可以有构造方法，init在构造方法之后执行；
+    （2）处理请求service(ServletRequest,ServletResponse)：
+        只有在init方法成功执行后才能处理请求，每次请求都会调用service方法；
+    （3）销毁destroy()：
+        当要从容器中移除该Servlet时，会调用destroy方法，用来关闭资源，做一些清理工作，只调用一次。
+
+3.同时Servlet接口还定义了getServletConfig()方法，就是返回init方法中传递进来的config，下面是Servlet的源码：
+    import java.io.IOException;
+
+    /**
+     * 所有servlet都要实现的接口
+     * Servlet是供Servlet引擎调用的Java类，它相当于Servlet引擎的组件
+     * 在Servlet接口中定义了三个方法，也被称为Servlet的声明周期：
+     * void init(ServletConfig config):Servlet被初始化时被Servlet引擎调用，只执行一次，且后于构造方法
+     * void service(ServletRequet,ServletResponse)：响应请求，每当有一个请求，Servlet引擎就调用该方法
+     * void destroy():Servlet被销毁时被Servlet引擎调用，用于关闭资源等服务
+     * 以上三个方法都是被Servlet引擎（容器）调用
+     * 除了以上方法之外，还提供了个方法：
+     * ServletConfig getServletConfig:一个ServletConfig对象，在init方法被传递进来，包含了Servlet的初始化信息和
+     * 代表Servlet容器的对象(ServletContext)
+     * String getServletInfo():返回该Servlet的基本信息
+     */
+    public interface Servlet {
+
+        /**
+         * 被servlet引擎调用用于初始化该Servlet，只有在该方法完成之后，才能响应请求
+         * 如果init方法抛出了异常，则一定不能响应请求。init方法在构造方法之后执行。
+         * Servlet引擎会把ServletConfig对象传进来
+         */
+        public void init(ServletConfig config) throws ServletException;
+
+        /**
+         * 返回ServletConfig对象，其中包含着初始化信息和初始化参数
+         * @see #init
+         */
+        public ServletConfig getServletConfig();
+
+        /**
+         * 响应请求，必须在init(Servletconfig config)成功后才能执行
+         */
+        public void service(ServletRequest req, ServletResponse res)
+                throws ServletException, IOException;
+
+        /**返回基本信息*/
+        public String getServletInfo();
+
+        /**
+         * 被Servlet引擎调用，用来关闭资源，或者做一些清楚工作
+         */
+        public void destroy();
+    }
+
+4.Servlet的默认实现
+    GenericServlet实现了Servlet接口，同时也实现了ServletConfig接口，之所以实现ServletConfig接口是为了方便编程。
+    下面代码中的注释已经很清楚了，不过还是要说一下init方法，在GenericServlet中提供了两个init方法：
+    （1）重写Servlet接口的init(ServletConfig config)方法，GenericSerlvet内部用私有属性保存此config，初始化工作调用无参的init()方法；
+    （2）重载的无参init()方法，子类应该覆盖这个方法，它会被有参数的init方法调用。
+    之所以这么设计是为了方便编程，前面提到，如果重写父类的init(ServletConfig)方法，需要调用super.init(config)，或者自己保存config，没必要增加这麻烦，
+    直接继承自无参的init。
+    Servlet引擎调用的init(ServletConfig)方法，而在init(ServletConfig)在最后调用了无参的init()。
+    /**
+     * 对Servlet接口的方法提供了默认是实现，通过继承GenericServlet方法，可以方便别写Servlet
+     * 1.首先需要注意的一点是它实现了ServletConfig接口，在Servlet的init(ServletConfig config)方法
+     * 中，Servlet容器会把一个ServletConfig传递进来，但是这个config只能在init()方法中使用，如果想在其他
+     * 方法中是使用，则需要使用一个似有引用把config保存起来,供getServletConfig()调用。
+     * GenericServlet也是这样做的，它有一个ServletConfig属性，在init(ServletConfig config)中
+     * 保存传递进来的config。
+     * 但同时它还实现了ServletConfig接口，这样做的目的是方便编程，在需要使用ServletConfig的方法时，
+     * 无需先获得ServletConfig对象，而可以直接使用这些方法。其实GenericServlet也仅仅是简单的调用
+     * config的相关方法，相当于一个代理。
+     *
+     * 2.GenericServlet实现了两个init方法
+     * 一个是重写Serlvet接口的init(ServletConfig)方法，使用该方法获得ServletConfig对象
+     * 它会在最后调用无参的init()方法；
+     * 一个是重载的无参init()方法
+     * 子类应该选择重写无参的init()方法，为什么呢？
+     * 如果重写init(ServletConfig)方法，那么首先需要在第一行调用super(config)
+     * 要不然，就得自己去保存传递进来的ServletConfig对象，增加不必要的麻烦
+     * 其次，重写无参的init()方法，会被有参数的init(ServletConfig)调用，达到同样的目的
+     * 结论：无参的init()方法就是为了方便子类覆盖
+     */
+    public abstract class GenericServlet implements Servlet, ServletConfig,
+            java.io.Serializable {
+
+        private static final long serialVersionUID = 1L;
+
+        private transient ServletConfig config;
+
+        public GenericServlet() {
+            // NOOP
+        }
+
+        @Override
+        public void destroy() {
+            // NOOP by default
+        }
+
+        /**实现ServletConfig接口的方法*/
+        public String getInitParameter(String name) {
+            return getServletConfig().getInitParameter(name);
+        }
+        public Enumeration<String> getInitParameterNames() {
+            return getServletConfig().getInitParameterNames();
+        }
+        @Override
+        public ServletContext getServletContext() {
+            return getServletConfig().getServletContext();
+        }
+        @Override
+        public String getServletName() {
+            return config.getServletName();
+        }
+        @Override
+        public ServletConfig getServletConfig() {
+            return config;
+        }
+
+        @Override
+        public String getServletInfo() {
+            return "";
+        }
+
+        /**
+         * 注意，这个方法会在最后调用无参的init()方法
+         * 子类应该选择覆盖init()方法
+         */
+        @Override
+        public void init(ServletConfig config) throws ServletException {
+            this.config = config;
+            this.init();
+        }
+
+        /**默认空实现，子类如果要覆盖init方法的话，应该选择覆盖此方法
+         * init(ServletConfig)会在最后调用这个方法
+         * */
+        public void init() throws ServletException {
+            // NOOP by default
+        }
+
+        public void log(String msg) {
+            getServletContext().log(getServletName() + ": " + msg);
+        }
+
+        public void log(String message, Throwable t) {
+            getServletContext().log(getServletName() + ": " + message, t);
+        }
+
+        @Override
+        public abstract void service(ServletRequest req, ServletResponse res)
+                throws ServletException, IOException;
+    }
+
+5.处理HTTP请求
+    为了方便处理HTTP请求，Servlet规范定义了HttpServlet抽象类，通过实现HttpServlet类可以把重点放到业务逻辑的实现上，而不是去处理和Servlet引擎的交互。
+    HttpServlet针对每种HTTP的请求方式都提供了具体的doXXX方法，其中最常用的还是doGet和doPost方法。
+    在理解HttpServlet类时，最重要的是理解Servlet的生命周期，Servlet引擎在处理请求是调用的是哪个方法？
+    是Servlet接口规定的service(ServletRequest,ServletResponse)方法，
+    在HttpServlet类中，处理请求的方法依然是首先调用service方法，service方法根据不同的请求方式，把请求转发到具体的doXXX方法中。
+    在这里有两个HTTP字段需要注意，
+    一个是响应实体首部Last-Modified，表示Servlet的修改时间；
+    一个是请求头部，If-Modified-Since，如果资源在指定的时间之后没有修改过，那么表示缓存有效，可以直接使用缓存。
+    HttpServlet.getLastModified()方法用于返回当前内容修改的时间。
+    Service在处理请求时，需要根据其返回值的不同需要做相应的处理：
+        （1）如果其返回值是-1，则二话不说，直接响应本次请求；
+        （2）如果是一个正数，且请求头中没有If-Modified-Since字段，或者If-Modified-Since字段表示的时间比getLastModified()返回的之间旧，表示缓存无效，需要处理本次请求
+            比如，如果当前修改时间是2014年9月1日，请求头中的If-Modified-Since表示的时间是2014年8月1日，也就是说请求中这样说到：
+            如果在2014年8月1日之后没有修改过资源，那么缓存有效。但是很明显，这种情形下，缓存已经失效了。同时把Last-Modified字段写入响应头中
+        （3）返回值是整数，但是请求头中If-Modified-Since表示的时间新于getLastModified()表示的时间，那么表示缓存有效，服务器直接返回一个304(Not Modified)，
+        告诉浏览器直接使用缓存。
+
+    import java.io.IOException;
+    import java.io.OutputStreamWriter;
+    import java.io.PrintWriter;
+    import java.io.UnsupportedEncodingException;
+    import java.lang.reflect.Method;
+    import java.text.MessageFormat;
+    import java.util.Enumeration;
+    import java.util.ResourceBundle;
+
+    import javax.servlet.GenericServlet;
+    import javax.servlet.ServletException;
+    import javax.servlet.ServletOutputStream;
+    import javax.servlet.ServletRequest;
+    import javax.servlet.ServletResponse;
+
+
+    /**
+     * 为方便处理HTTP请求的Servlet而提供的抽象类，继承了GenericServlet
+     * 我们写的绝大多数Servlet都应该继承自HttpServlet
+     * HttpServlet根据不同的http请求提供了不同的方法：
+     * doGet:如果servlet支持http GET方法
+     * doPost:如果servlet支持http POST方法
+     * 以上两个方法最常用，其他的还有doPut,doDelete,doHead,doOptions,doTrace
+     *
+     * @author  Various
+     */
+    public abstract class HttpServlet extends GenericServlet {
+
+        private static final long serialVersionUID = 1L;
+
+        //HTTP的各种方法
+        private static final String METHOD_DELETE = "DELETE";
+        private static final String METHOD_HEAD = "HEAD";
+        private static final String METHOD_GET = "GET";
+        private static final String METHOD_OPTIONS = "OPTIONS";
+        private static final String METHOD_POST = "POST";
+        private static final String METHOD_PUT = "PUT";
+        private static final String METHOD_TRACE = "TRACE";
+
+        private static final String HEADER_IFMODSINCE = "If-Modified-Since";
+        private static final String HEADER_LASTMOD = "Last-Modified";
+
+        private static final String LSTRING_FILE =
+            "javax.servlet.http.LocalStrings";
+        private static ResourceBundle lStrings =
+            ResourceBundle.getBundle(LSTRING_FILE);
+
+
+
+        /**
+         * 被service()方法调用去处理GET请求
+         * 重写此方法以支持GET请求同样也自动的支持HEAD请求
+         * 一个HEAD请求就是一个GET请求，只不过HEAD请求只返回首部，不返回响应实体部分
+         * 子类如果要支持GET方法，就必须要重写次方法，因为HttpServlet的默认实现是
+         * 发送错误
+         */
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp)
+            throws ServletException, IOException
+        {
+            //返回使用的协议，protocol/majorVersion,如HTTP/1.1
+            String protocol = req.getProtocol();
+            String msg = lStrings.getString("http.method_get_not_supported");
+            //由于是默认实现，根据不同的协议，直接报错
+            if (protocol.endsWith("1.1")) {
+                resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, msg);
+            } else {
+                resp.sendError(HttpServletResponse.SC_BAD_REQUEST, msg);
+            }
+        }
+
+
+        /**
+         * 返回的值代表当前输出响应内容的修改时间，总是返回-1，子类可重写
+         * getLastModified方法是一个回调方法，由HttpServlet的service方法调用，
+         * service方法可以根据返回值在响应消息中自动生成Last_Modified头字段（最后被修改的时间）
+         * Servlet受到一个GET方式的请求时，HttpServlet重载的service方法在调用doGet之前，会先
+         * 调用本方法，并根据返回值来决定是否调用doGet方法和在响应消息是是否生成Last_Modified字段
+         * 具体规则如下：
+         * 1.如果是一个负数（本方法默认实现），直接调用doGet方法
+         * 2.如果是一个正数，且请求消息中没有包含If-Modified-Since请求头，或者请求头中的时间值
+         *   比返回值旧时,这说明要么是第一次请求，要么是缓存过期了，service将根据返回值生成一个
+         *   Last-Modified字段，并调用doGet方法
+         * 3.本方法返回值是一个正数，且请求消息中包含的If-Modified-Since的时间值比返回值新或者相同，
+         * 说明缓存有效,service方法将不调用doGet方法，而是返回304(Not Modified)告诉浏览器缓存仍然有效
+         */
+        protected long getLastModified(HttpServletRequest req) {
+            return -1;
+        }
+
+
+       /**
+        * 没有相应实体，其他与GET方法相同，也正是通过调用doGet来完成请求
+        */
+        protected void doHead(HttpServletRequest req, HttpServletResponse resp)
+            throws ServletException, IOException {
+            //本类的内部类
+            NoBodyResponse response = new NoBodyResponse(resp);
+
+            doGet(req, response);
+            response.setContentLength();
+        }
+
+
+        /**
+         * 也是被service方法调用，默认实现是报错,参考doGet方法
+         */
+        protected void doPost(HttpServletRequest req, HttpServletResponse resp)
+            throws ServletException, IOException {
+
+            String protocol = req.getProtocol();
+            String msg = lStrings.getString("http.method_post_not_supported");
+            if (protocol.endsWith("1.1")) {
+                resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, msg);
+            } else {
+                resp.sendError(HttpServletResponse.SC_BAD_REQUEST, msg);
+            }
+        }
+
+        /**
+         * 被Servlet容器调用，完成请求
+         * 把请求转发到具体的方法上，通过调用重载的service(HttpServletRequest,HttpServletResponse)
+         * 完成这个方法做的事情就是把request和response转换成HttpServerRequest,HttpServletResponse,
+         * 具体的转发工作由重载的service方法完成
+         */
+        @Override
+        public void service(ServletRequest req, ServletResponse res)
+            throws ServletException, IOException {
+
+            HttpServletRequest  request;
+            HttpServletResponse response;
+
+            try {
+                request = (HttpServletRequest) req;
+                response = (HttpServletResponse) res;
+            } catch (ClassCastException e) {
+                throw new ServletException("non-HTTP request or response");
+            }
+            service(request, response);
+        }
+
+
+        /**
+         * 处理标准的HTTP请求，此方法把具体的请求转发到相应的doXXX方法上
+         * 被service(ServletRequest，ServletResponse)调用
+         * 没有理由重写此方法
+         */
+        protected void service(HttpServletRequest req, HttpServletResponse resp)
+            throws ServletException, IOException {
+            //返回HTTP的请求方式，如GET,POST,HEAD
+            String method = req.getMethod();
+
+            /**
+             * 如果是GET方式
+             * 1.首先通过getLastModified(req)获得修改时间
+             *  i.如果修改时间==-1，不管请求是怎样的，直接调用doGet
+             *  ii.如果不是-1，则需要获取请求中的If-Modified_Since的值，保存到ifModifiedSince变量中
+             *     如果请求头中没有If-Modified-Since字段，则ifModifiedSince=-1,通过比较lastModified
+             *     和ifModifiedSince的值来判断缓存是否过期:
+             *     如果lastModified代表的日期比ifModifiedSince代表的日期新时，则说明缓存失效了，
+             *     比如lastModified代表9月1号修改的，ifModifiedSince为8月1号，
+             *     意思是如果自8月1号没有修改过的话,则可以使用缓存，很明显已经修改过了，
+             *     所以不能使用缓存,这个时候要调用doGet方法响应，同时在相应头设置Last-Modified的值。
+             *     如果lastModified代表的时间比ifModifiedSince旧时，也就是没有修改过，
+             *     则返回304（Not Modified）告诉浏览器，直接使用缓存。
+             * 2.判断是何种方式，调用具体的doXXX方法
+             *
+             */
+            if (method.equals(METHOD_GET)) {
+                long lastModified = getLastModified(req);
+                if (lastModified == -1) {
+                    // servlet doesn't support if-modified-since, no reason
+                    // to go through further expensive logic
+                    doGet(req, resp);
+                } else {
+                    long ifModifiedSince;
+                    try {
+                        ifModifiedSince = req.getDateHeader(HEADER_IFMODSINCE);
+                    } catch (IllegalArgumentException iae) {
+                        // Invalid date header - proceed as if none was set
+                        ifModifiedSince = -1;
+                    }
+                    if (ifModifiedSince < (lastModified / 1000 * 1000)) {
+                        // If the servlet mod time is later, call doGet()
+                        // Round down to the nearest second for a proper compare
+                        // A ifModifiedSince of -1 will always be less
+                        maybeSetLastModified(resp, lastModified);
+                        doGet(req, resp);
+                    } else {
+                        resp.setStatus(HttpServletResponse.SC_NOT_MODIFIED);
+                    }
+                }
+
+            } else if (method.equals(METHOD_HEAD)) {
+                long lastModified = getLastModified(req);
+                maybeSetLastModified(resp, lastModified);
+                doHead(req, resp);
+
+            } else if (method.equals(METHOD_POST)) {
+                doPost(req, resp);
+
+            } else if (method.equals(METHOD_PUT)) {
+                doPut(req, resp);
+
+            } else if (method.equals(METHOD_DELETE)) {
+                doDelete(req, resp);
+
+            } else if (method.equals(METHOD_OPTIONS)) {
+                doOptions(req,resp);
+
+            } else if (method.equals(METHOD_TRACE)) {
+                doTrace(req,resp);
+
+            } else {
+                //没有适合的响应方法，只能报错了
+                String errMsg = lStrings.getString("http.method_not_implemented");
+                Object[] errArgs = new Object[1];
+                errArgs[0] = method;
+                errMsg = MessageFormat.format(errMsg, errArgs);
+
+                resp.sendError(HttpServletResponse.SC_NOT_IMPLEMENTED, errMsg);
+            }
+        }
+
+
+        /*
+         * 设置响应的实体首部字段Lat-Modified
+         */
+        private void maybeSetLastModified(HttpServletResponse resp,
+                                          long lastModified) {
+            if (resp.containsHeader(HEADER_LASTMOD))
+                return;
+            if (lastModified >= 0)
+                resp.setDateHeader(HEADER_LASTMOD, lastModified);
+        }
+    }
+    ServletConfig
+    ServletConfig封装了Serlvet的初始化参数，同时其内部包含代表Servlet容器的对象，具体的解释都在源码中了：
+    [java] view plain copy
+    /**
+     * 在一个Servlet被初始化是被Serlvet容器传递给init方法
+     * 包含了Servletd的配置信息。它提供了两个方法用于Servlet的初始化参数：
+     * public String getInitParameter(String name):获取指定参数的值
+     * public Enumeration<String> getInitParameterNames():获得所有的参数名称，遍历该Enumeration，可获得所有参数
+     * 不得不吐槽一下，Enumeration都已经被Iterator取代了，竟然还在用这个，真土
+     * 初始参数是在Servlet的配置中指定的，如下面的示例就指定了名字和年龄，可以通过上面两个方法获得这些值：
+     * <servlet>
+     *   <servlet-name>LifeCircle</servlet-name>
+     *  <servlet-class>com.servlet.base.LifeCircle</servlet-class>
+     *   <init-param>
+     *    <param-name>name</param-name>
+     *     <param-value>caoxiaoyong</param-value>
+     *  </init-param>
+     *  <init-param>
+     *    <param-name>age</param-name>
+     *    <param-value>25</param-value>
+     *  </init-param>
+     *</servlet>
+     *----------------------------------------------
+     *还有一个方法用于获取Serlvet容器的对象:
+     *public ServletContext getServletContext()
+     */
+    public interface ServletConfig {
+
+        /**返回Servlet的名称 */
+        public String getServletName();
+        public ServletContext getServletContext();
+        public String getInitParameter(String name);
+        public Enumeration<String> getInitParameterNames();
+    }
+
+    通过上面的分析，我们应该能很清晰的回答如何编写一个Servlet类了：
+    如果是处理Http请求，则继承自HttpServlet类，并根据请求方法去覆盖相应的doXXX方法；
+    如果不是Http请求，则继承GenericServlet类。如果认真的分析了上面四个接口或类的源码，我想收获的不止这一点。
+
+

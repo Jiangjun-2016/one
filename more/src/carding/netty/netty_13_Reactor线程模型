@@ -1,0 +1,169 @@
+转载（http://blog.csdn.net/qq924862077/article/details/52839139）
+
+1. 背景
+1.1. Java线程模型的演进
+1.1.1. 单线程
+    时间回到十几年前，那时主流的CPU都还是单核（除了商用高性能的小机），CPU的核心频率是机器最重要的指标之一。
+    在Java领域当时比较流行的是单线程编程，对于CPU密集型的应用程序而言，频繁的通过多线程进行协作和抢占时间片反而会降低性能。
+1.1.2. 多线程
+    随着硬件性能的提升，CPU的核数越来越越多，很多服务器标配已经达到32或64核。通过多线程并发编程，可以充分利用多核CPU的处理能力，提升系统的处理效率和并发性能。
+    从2005年开始，随着多核处理器的逐步普及，java的多线程并发编程也逐渐流行起来，当时商用主流的JDK版本是1.4，用户可以通过 new Thread（）的方式创建新的线程。
+    由于JDK1.4并没有提供类似线程池这样的线程管理容器，多线程之间的同步、协作、创建和销毁等工作都需要用户自己实现。由于创建和销毁线程是个相对比较重量级的操作，
+    因此，这种原始的多线程编程效率和性能都不高。
+1.1.3. 线程池
+    为了提升Java多线程编程的效率和性能，降低用户开发难度。
+    JDK1.5推出了java.util.concurrent并发编程包。在并发编程类库中，提供了线程池、线程安全容器、原子类等新的类库，极大的提升了Java多线程编程的效率，降低了开发难度。
+    从JDK1.5开始，基于线程池的并发编程已经成为Java多核编程的主流。
+
+1.2. Reactor模型
+    无论是C++还是Java编写的网络框架，大多数都是基于Reactor模式进行设计和开发，Reactor模式基于事件驱动，特别适合处理海量的I/O事件。
+1.2.1. 单线程模型
+    Reactor单线程模型，指的是所有的IO操作都在同一个NIO线程上面完成，NIO线程的职责如下：
+        1）作为NIO服务端，接收客户端的TCP连接；
+        2）作为NIO客户端，向服务端发起TCP连接；
+        3）读取通信对端的请求或者应答消息；
+        4）向通信对端发送消息请求或者应答消息。
+    由于Reactor模式使用的是异步非阻塞IO，所有的IO操作都不会导致阻塞，理论上一个线程可以独立处理所有IO相关的操作。
+    从架构层面看，一个NIO线程确实可以完成其承担的职责。例如，通过Acceptor类接收客户端的TCP连接请求消息，链路建立成功之后，
+    通过Dispatch将对应的ByteBuffer派发到指定的Handler上进行消息解码。用户线程可以通过消息编码通过NIO线程将消息发送给客户端。
+    对于一些小容量应用场景，可以使用单线程模型。但是对于高负载、大并发的应用场景却不合适，主要原因如下：
+    1）一个NIO线程同时处理成百上千的链路，性能上无法支撑，即便NIO线程的CPU负荷达到100%，也无法满足海量消息的编码、解码、读取和发送；
+    2）当NIO线程负载过重之后，处理速度将变慢，这会导致大量客户端连接超时，超时之后往往会进行重发，这更加重了NIO线程的负载，最终会导致大量消息积压和处理超时，
+    成为系统的性能瓶颈；
+    3）可靠性问题：一旦NIO线程意外跑飞，或者进入死循环，会导致整个系统通信模块不可用，不能接收和处理外部消息，造成节点故障。
+    为了解决这些问题，演进出了Reactor多线程模型，下面我们一起学习下Reactor多线程模型。
+
+1.2.2. 多线程模型
+    Rector多线程模型与单线程模型最大的区别就是有一组NIO线程处理IO操作
+    Reactor多线程模型的特点：
+        1）有专门一个NIO线程-Acceptor线程用于监听服务端，接收客户端的TCP连接请求；
+        2）网络IO操作-读、写等由一个NIO线程池负责，线程池可以采用标准的JDK线程池实现，它包含一个任务队列和N个可用的线程，由这些NIO线程负责消息的读取、解码、编码和发送；
+        3）1个NIO线程可以同时处理N条链路，但是1个链路只对应1个NIO线程，防止发生并发操作问题。
+    在绝大多数场景下，Reactor多线程模型都可以满足性能需求；但是，在极个别特殊场景中，一个NIO线程负责监听和处理所有的客户端连接可能会存在性能问题。
+    例如并发百万客户端连接，或者服务端需要对客户端握手进行安全认证，但是认证本身非常损耗性能。
+    在这类场景下，单独一个Acceptor线程可能会存在性能不足问题，为了解决性能问题，产生了第三种Reactor线程模型-主从Reactor多线程模型。
+
+1.2.3. 主从多线程模型
+    主从Reactor线程模型的特点是：服务端用于接收客户端连接的不再是个1个单独的NIO线程，
+    而是一个独立的NIO线程池。Acceptor接收到客户端TCP连接请求处理完成后（可能包含接入认证等），
+    将新创建的SocketChannel注册到IO线程池（sub reactor线程池）的某个IO线程上，由它负责SocketChannel的读写和编解码工作。
+    Acceptor线程池仅仅只用于客户端的登陆、握手和安全认证，一旦链路建立成功，就将链路注册到后端subReactor线程池的IO线程上，由IO线程负责后续的IO操作。
+
+    利用主从NIO线程模型，可以解决1个服务端监听线程无法有效处理所有客户端连接的性能不足问题。
+    它的工作流程总结如下：
+    从主线程池中随机选择一个Reactor线程作为Acceptor线程，用于绑定监听端口，接收客户端连接；
+    Acceptor线程接收客户端连接请求之后创建新的SocketChannel，将其注册到主线程池的其它Reactor线程上，由其负责接入认证、IP黑白名单过滤、握手等操作；
+    步骤2完成之后，业务层的链路正式建立，将SocketChannel从主线程池的Reactor线程的多路复用器上摘除，重新注册到Sub线程池的线程上，用于处理I/O的读写操作。
+
+2. Netty线程模型
+2.1. Netty线程模型分类
+    事实上，Netty的线程模型与1.2章节中介绍的三种Reactor线程模型相似，下面章节我们通过Netty服务端和客户端的线程处理流程图来介绍Netty的线程模型。
+2.1.1. 服务端线程模型
+    一种比较流行的做法是 服务端监听线程 和 IO线程 分离，类似于Reactor的多线程模型，
+    下面我们结合Netty的源码，对服务端创建线程工作流程进行介绍：
+
+    第一步，从用户线程发起创建服务端操作，代码如下：
+      EventLoopGroup bossGroup = new NioEventLoopGroup();
+      EventLoopGroup workerGroup = new NioEventLoopGroup();
+      try {
+          ServerBootstrap serverBootstrap = new ServerBootstrap().group(bossGroup, workerGroup).channel(NioServerSocketChannel.class)
+                  .localAddress(port).childHandler(new ChannelInitializer<SocketChannel>() {
+                      @Override
+                      protected void initChannel(SocketChannel ch) throws Exception {
+                           ch.pipeline().addLast("decoder", new StringDecoder());
+                              ch.pipeline().addLast("encoder", new StringEncoder());
+                              ch.pipeline().addLast(new ServerHandler());
+                      }
+                  }).option(ChannelOption.SO_BACKLOG, 128)
+                  .childOption(ChannelOption.SO_KEEPALIVE, true);
+          ChannelFuture future = serverBootstrap.bind(port).sync();
+          System.out.println("Server start listen at " + port );
+          future.channel().closeFuture().sync();
+      } catch (Exception e) {
+           bossGroup.shutdownGracefully();
+           workerGroup.shutdownGracefully();
+      }
+
+    通常情况下，服务端的创建是在用户进程启动的时候进行，因此一般由Main函数或者启动类负责创建，服务端的创建由业务线程负责完成。
+    在创建服务端的时候实例化了2个EventLoopGroup，1个EventLoopGroup实际就是一个EventLoop线程组，负责管理EventLoop的申请和释放。
+
+    EventLoopGroup管理的线程数可以通过构造函数设置，如果没有设置，默认取-Dio.netty.eventLoopThreads，如果该系统参数也没有指定，则为可用的CPU内核数 × 2。
+    bossGroup线程组实际就是Acceptor线程池，负责处理客户端的TCP连接请求，如果系统只有一个服务端端口需要监听，则建议bossGroup线程组线程数设置为1。
+    workerGroup是真正负责I/O读写操作的线程组，通过ServerBootstrap的group方法进行设置，用于后续的Channel绑定。
+
+    第二步，Acceptor线程绑定监听端口，启动NIO服务端，相关代码如下：
+    @Override
+    Channnel createChanel(){
+        EventLoop eventLoop = gruop.next();
+        return channnelFactory().newChannel(evvventLoop,childGroup);
+    }
+    从bossGroup中选择一个Acceptor线程监听服务端
+
+    其中，group()返回的就是bossGroup，它的next方法用于从线程组中获取可用线程，代码如下：
+    @Override
+    public EventException next(){
+        return children[Math.abs(childIndex.getAndIncrement()%children.length)];
+    }
+    选择Acceptor线程
+
+    服务端Channel创建完成之后，将其注册到多路复用器Selector上，用于接收客户端的TCP连接，核心代码如下：
+    public MioSererSocetChannel(EventLoop eventLoop,EventLoopGroup childGroup){
+        super(null,eventLoop,chilGGroup,newSocket(),SelectionKey.OP_ACCCEPT);
+        config = new DefaultServerSocketChannelConfig(this,javaChannel().socket());
+    }
+    注册ServerSocketChannel 到Selector
+
+    第三步，如果监听到客户端连接，则创建客户端SocketChannel连接，重新注册到workerGroup的IO线程上。首先看Acceptor如何处理客户端的接入：
+    try{
+        int readyops = k.readops();
+        if((readops & (SelectionKey.OP_READ | SelectionKeey.OP_ACCEPT))!=0 || readops ==0){
+            unsafe.read();
+            if(!ch.isOpen()){
+                return;
+            }
+        }
+    }
+    处理读或者连接事件
+
+    调用unsafe的read（）方法，对于NioServerSocketChannel，它调用了NioMessageUnsafe的read()方法，代码如下：
+    Throwable exception = null;
+    try{
+        for(;;){
+            int localRead = doReadMessages(readuf);
+            if(localRead == 0){
+                break;
+            }
+            if(localRead < 0){
+                closed = true;
+                break;
+            }
+        }
+    }
+    NioServerSocketChannel的read()方法
+
+    最终它会调用NioServerSocketChannel的doReadMessages方法，代码如下：
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
