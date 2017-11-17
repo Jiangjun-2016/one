@@ -1,0 +1,57 @@
+转载（http://blog.csdn.net/qq924862077/）
+
+0.  在上一篇博客springMVC源码分析--容器初始化（一）中我们介绍了spring web初始化IOC容器的过程，
+    springMVC作为spring项目中的子项目，其可以和spring web容器很好的兼容。
+    其实现机制就是springMVC也会自己初始化一个IOC容器，然后将spring web的IOC容器作为父容器，
+    这样就可以使用父容器中注入的bean了，由于是向上继承的，所以父容器无法使用子容器注入的Bean。
+
+1.  接下来我们通过一步一步分析springMVC的IOC容器的初始化过程。
+    使用springMVC首先需要在web.xml中配置springMVC相关的配置，配置如下，springMVC的核心就是DispatcherServlet了。
+
+    <servlet>
+        <servlet-name>springmvc</servlet-name>
+        <servlet-class>
+             org.springframework.web.servlet.DispatcherServlet
+        </servlet-class>
+        <init-param>
+        <param-name>contextConfigLocation</param-name>
+        <param-value>classpath:springmvc-config.xml</param-value>
+        </init-param>
+        <load-on-startup>1</load-on-startup>
+    </servlet>
+
+    所以在web容器启动时会首先执行DispatcherServlet，其实质也是一个HttpServlet，其继承关系如下：
+    DispatcherServlet
+        FrameworkServlet
+            HttpServletBean
+                HttpServlet
+
+    如上图中，我们可以看到DispatcherServlet的体系结构，既然其有父类，
+    所以很多初始化的操作就可能放到父类中完成，既然DispatcherServlet是一个Servlet，那么它就会有如下生命周期：
+        1，初始化阶段  调用init()方法。Servlet被装载后，Servlet容器创建一个Servlet实例并且调用Servlet的init()方法进行初始化。
+        在Servlet的整个生命周期内，init()方法只被调用一次。
+        2，响应客户请求阶段　　调用service()方法
+        3，终止阶段　　调用destroy()方法
+    springMVC的完整生命周期如下，接下来我们就按照这个生命周期对springMVC的整个体系架构的源码进行分析
+
+    HttpServletBean   FrameworkServlet                   DispatcherServlet                       View
+        |
+        init()
+        |
+        |->initServletBean->|
+        |                   |
+        |              intWebApplicationContext()
+        |                   |----------------->onRefresh()--------|
+        |                                                         |
+        |                                                        initStrategies()
+        |                                                        initHandleMappinngs()
+        |                                                        initHadleAdapters()
+        |                                                        processDispatchResult()
+        |                                                        render()
+        |                                                        ModelAndView()
+        |                                                          |
+        |                                                          |-------------->render()-------->|
+        |                                                                                           |
+        |                                                                                           |
+
+
