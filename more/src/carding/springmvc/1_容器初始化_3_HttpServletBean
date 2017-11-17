@@ -1,0 +1,169 @@
+转载（http://blog.csdn.net/qq924862077/）
+
+0.  在上一篇博客 springMVC源码分析--容器初始化（二）DispatcherServlet中，我们队SpringMVC整体生命周期有一个简单的说明，
+    并没有进行详细的源码分析，接下来我们会根据博客中提供的springMVC的生命周期图来详细的对SpringMVC的相关源码进行分析。
+
+1.  在上一篇博客中我们了解到，SpringMVC初始化配置是在父类HttpServletBean的init方法中，
+    其实HttServletBean是一个比较简单的类，在这个类中并没有太复杂的功能，主要的函数是init函数中，源码如下：
+    主要工作就是设置我们在web.xml中配置的contextConfigLocation属性，当然这个属性是springMVC文件的配置文件地址，当然也可以不用配置，使用默认名称加载。
+    initBeanWrapper 函数并没有具体实现
+    initServletBean（）是模板方法，是在子类FrameworkServlet中实现的，接下来我们会详细分析，这样HttpServletBean的主体功能就介绍完了。
+
+    public final void init() throws ServletException {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Initializing servlet '" + getServletName() + "'");
+        }
+
+        // Set bean properties from init parameters.
+        try {
+            //获得web.xml中的contextConfigLocation配置属性，就是spring MVC的配置文件
+            PropertyValues pvs = new ServletConfigPropertyValues(getServletConfig(), this.requiredProperties);
+            BeanWrapper bw = PropertyAccessorFactory.forBeanPropertyAccess(this);
+            //获取服务器的各种信息
+            ResourceLoader resourceLoader = new ServletContextResourceLoader(getServletContext());
+            bw.registerCustomEditor(Resource.class, new ResourceEditor(resourceLoader, getEnvironment()));
+            //模板方法，可以在子类中调用，做一些初始化工作，bw代表DispatcherServlet
+            initBeanWrapper(bw);
+            //将配置的初始化值设置到DispatcherServlet中
+            bw.setPropertyValues(pvs, true);
+        }
+        catch (BeansException ex) {
+            logger.error("Failed to set bean properties on servlet '" + getServletName() + "'", ex);
+            throw ex;
+        }
+
+        // Let subclasses do whatever initialization they like.
+        //模板方法，子类初始化的入口方法
+        initServletBean();
+
+        if (logger.isDebugEnabled()) {
+            logger.debug("Servlet '" + getServletName() + "' configured successfully");
+        }
+    }
+
+2.  当然HttpServletBean还是提供了一些其他方法的，其实都是一些比较简单的get和set方法，就不做过多介绍了，HttpServletBean的完整源码如下：
+    /**
+     *HttpServlet的一个简单扩展类
+     */
+    @SuppressWarnings("serial")
+    public abstract class HttpServletBean extends HttpServlet implements EnvironmentCapable, EnvironmentAware {
+
+        protected final Log logger = LogFactory.getLog(getClass());
+
+        private final Set<String> requiredProperties = new HashSet<String>();
+
+        private ConfigurableEnvironment environment;
+
+        protected final void addRequiredProperty(String property) {
+            this.requiredProperties.add(property);
+        }
+        @Override
+        public final void init() throws ServletException {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Initializing servlet '" + getServletName() + "'");
+            }
+
+            // Set bean properties from init parameters.
+            try {
+                //获得web.xml中的contextConfigLocation配置属性，就是spring MVC的配置文件
+                PropertyValues pvs = new ServletConfigPropertyValues(getServletConfig(), this.requiredProperties);
+                BeanWrapper bw = PropertyAccessorFactory.forBeanPropertyAccess(this);
+                //获取服务器的各种信息
+                ResourceLoader resourceLoader = new ServletContextResourceLoader(getServletContext());
+                bw.registerCustomEditor(Resource.class, new ResourceEditor(resourceLoader, getEnvironment()));
+                //模板方法，可以在子类中调用，做一些初始化工作，bw代表DispatcherServelt
+                initBeanWrapper(bw);
+                //将配置的初始化值设置到DispatcherServlet中
+                bw.setPropertyValues(pvs, true);
+            }
+            catch (BeansException ex) {
+                logger.error("Failed to set bean properties on servlet '" + getServletName() + "'", ex);
+                throw ex;
+            }
+
+            // Let subclasses do whatever initialization they like.
+            //模板方法，子类初始化的入口方法
+            initServletBean();
+
+            if (logger.isDebugEnabled()) {
+                logger.debug("Servlet '" + getServletName() + "' configured successfully");
+            }
+        }
+
+        /**
+         * Initialize the BeanWrapper for this HttpServletBean,
+         * possibly with custom editors.
+         * <p>This default implementation is empty.
+         * @param bw the BeanWrapper to initialize
+         * @throws BeansException if thrown by BeanWrapper methods
+         * @see org.springframework.beans.BeanWrapper#registerCustomEditor
+         */
+        protected void initBeanWrapper(BeanWrapper bw) throws BeansException {
+        }
+
+        //获取servletName
+        @Override
+        public final String getServletName() {
+            return (getServletConfig() != null ? getServletConfig().getServletName() : null);
+        }
+
+        //获取ServletContext
+        @Override
+        public final ServletContext getServletContext() {
+            return (getServletConfig() != null ? getServletConfig().getServletContext() : null);
+        }
+
+
+
+        protected void initServletBean() throws ServletException {
+        }
+
+
+        @Override
+        public void setEnvironment(Environment environment) {
+            Assert.isInstanceOf(ConfigurableEnvironment.class, environment);
+            this.environment = (ConfigurableEnvironment) environment;
+        }
+
+        @Override
+        public ConfigurableEnvironment getEnvironment() {
+            if (this.environment == null) {
+                this.environment = this.createEnvironment();
+            }
+            return this.environment;
+        }
+
+
+        protected ConfigurableEnvironment createEnvironment() {
+            return new StandardServletEnvironment();
+        }
+
+        private static class ServletConfigPropertyValues extends MutablePropertyValues {
+
+            public ServletConfigPropertyValues(ServletConfig config, Set<String> requiredProperties)
+                throws ServletException {
+
+                Set<String> missingProps = (requiredProperties != null && !requiredProperties.isEmpty()) ?
+                        new HashSet<String>(requiredProperties) : null;
+
+                Enumeration<String> en = config.getInitParameterNames();
+                while (en.hasMoreElements()) {
+                    String property = en.nextElement();
+                    Object value = config.getInitParameter(property);
+                    addPropertyValue(new PropertyValue(property, value));
+                    if (missingProps != null) {
+                        missingProps.remove(property);
+                    }
+                }
+                // Fail if we are still missing properties.
+                if (missingProps != null && missingProps.size() > 0) {
+                    throw new ServletException(
+                        "Initialization from ServletConfig for servlet '" + config.getServletName() +
+                        "' failed; the following required properties were missing: " +
+                        StringUtils.collectionToDelimitedString(missingProps, ", "));
+                }
+            }
+        }
+
+    }
+
