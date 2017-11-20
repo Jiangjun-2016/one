@@ -1,0 +1,137 @@
+转载（http://blog.csdn.net/qq924862077/）
+
+0.  在上一篇博客springMVC源码分析--动态样式ThemeResolver（一）中我们介绍了多样式ThemeResolver的使用方法，接下来我们对源码进行简单的分析一下。
+
+1.  接口ThemeResolver中定义的接口是比较简单的，提供两个接口：
+    （1）resolveThemeName获取样式名
+    （2）setThemeName设置样式名
+
+    public interface ThemeResolver {
+
+        String resolveThemeName(HttpServletRequest request);
+
+        void setThemeName(HttpServletRequest request, HttpServletResponse response, String themeName);
+
+    }
+
+2.  抽象类AbstractThemeResolver，提供两个方法：
+    （1）setDefaultThemeName 设置默认的样式名
+    （2）getDefaultThemeName 获取默认的样式名
+    public abstract class AbstractThemeResolver implements ThemeResolver {
+
+        public final static String ORIGINAL_DEFAULT_THEME_NAME = "theme";
+
+        private String defaultThemeName = ORIGINAL_DEFAULT_THEME_NAME;
+
+        public void setDefaultThemeName(String defaultThemeName) {
+            this.defaultThemeName = defaultThemeName;
+        }
+
+        public String getDefaultThemeName() {
+            return this.defaultThemeName;
+        }
+
+    }
+
+3.  实现类CookieThemeResolver，其实现原理其实是比较简单的，就是在Cookie中设置样式名
+    （1）在setThemeName函数中中将theme设置到cookie中
+    public class CookieThemeResolver extends CookieGenerator implements ThemeResolver {
+
+        public final static String ORIGINAL_DEFAULT_THEME_NAME = "theme";
+
+        public static final String THEME_REQUEST_ATTRIBUTE_NAME = CookieThemeResolver.class.getName() + ".THEME";
+
+        public static final String DEFAULT_COOKIE_NAME = CookieThemeResolver.class.getName() + ".THEME";
+
+        private String defaultThemeName = ORIGINAL_DEFAULT_THEME_NAME;
+
+        public CookieThemeResolver() {
+            setCookieName(DEFAULT_COOKIE_NAME);
+        }
+
+        public void setDefaultThemeName(String defaultThemeName) {
+            this.defaultThemeName = defaultThemeName;
+        }
+
+        public String getDefaultThemeName() {
+            return defaultThemeName;
+        }
+
+
+        @Override
+        public String resolveThemeName(HttpServletRequest request) {
+            // Check request for preparsed or preset theme.
+            String themeName = (String) request.getAttribute(THEME_REQUEST_ATTRIBUTE_NAME);
+            if (themeName != null) {
+                return themeName;
+            }
+
+            // Retrieve cookie value from request.
+            Cookie cookie = WebUtils.getCookie(request, getCookieName());
+            if (cookie != null) {
+                String value = cookie.getValue();
+                if (StringUtils.hasText(value)) {
+                    themeName = value;
+                }
+            }
+
+            // Fall back to default theme.
+            if (themeName == null) {
+                themeName = getDefaultThemeName();
+            }
+            request.setAttribute(THEME_REQUEST_ATTRIBUTE_NAME, themeName);
+            return themeName;
+        }
+
+        @Override
+        public void setThemeName(HttpServletRequest request, HttpServletResponse response, String themeName) {
+            if (StringUtils.hasText(themeName)) {
+                // Set request attribute and add cookie.
+                request.setAttribute(THEME_REQUEST_ATTRIBUTE_NAME, themeName);
+                addCookie(response, themeName);
+            }
+            else {
+                // Set request attribute to fallback theme and remove cookie.
+                request.setAttribute(THEME_REQUEST_ATTRIBUTE_NAME, getDefaultThemeName());
+                removeCookie(response);
+            }
+        }
+
+    }
+
+4.  实现类SessionThemeResolver的实现也是比较简单的，就是将themeName保存到session中就可以了。
+    public class SessionThemeResolver extends AbstractThemeResolver {
+
+        public static final String THEME_SESSION_ATTRIBUTE_NAME = SessionThemeResolver.class.getName() + ".THEME";
+
+
+        @Override
+        public String resolveThemeName(HttpServletRequest request) {
+            String themeName = (String) WebUtils.getSessionAttribute(request, THEME_SESSION_ATTRIBUTE_NAME);
+            // A specific theme indicated, or do we need to fallback to the default?
+            return (themeName != null ? themeName : getDefaultThemeName());
+        }
+
+        @Override
+        public void setThemeName(HttpServletRequest request, HttpServletResponse response, String themeName) {
+            WebUtils.setSessionAttribute(request, THEME_SESSION_ATTRIBUTE_NAME,
+                    (StringUtils.hasText(themeName) ? themeName : null));
+        }
+
+    }
+
+5.  FixedThemeResolver中没有具体的实现操作
+    public class FixedThemeResolver extends AbstractThemeResolver {
+
+        @Override
+        public String resolveThemeName(HttpServletRequest request) {
+            return getDefaultThemeName();
+        }
+
+        @Override
+        public void setThemeName(HttpServletRequest request, HttpServletResponse response, String themeName) {
+            throw new UnsupportedOperationException("Cannot change theme - use a different theme resolution strategy");
+        }
+
+    }
+

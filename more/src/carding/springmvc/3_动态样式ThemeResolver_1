@@ -1,0 +1,79 @@
+转载（http://blog.csdn.net/qq924862077/）
+
+0.  Spring MVC中通过ThemeSource接口来提供对动态更换样式的支持，
+    并提供了ResourceBundleThemeSource这个具体实现类来提供通过properties配置文件对theme中的样式的配置
+
+    例如配置文件中 内容为 helloworld=theme/default/css/helloworld.css
+    而jsp文件中使用 <link rel="stylesheet" type="text/css" href="<spring:theme code='helloworld'/>" />
+
+    来引用对helloworld这个样式文件的引入。由此来实现样式文件的动态引用，从而使spring mvc中可以实现换肤功能。
+
+1.  如果说ThemeSource接口是提供了如何去取当前的theme的code与实际内容的mapping关系，
+    那么spring mvc提供的另外一个interfaceThemeResolver则是提供了如何去设置当前使用的theme的手段。
+    Spring MVC提供了三个ThemeReslover的实现类，分别是 :
+    （1）FixedThemeResolver:固定格式的theme,不能在系统运行时动态更改theme.
+    （2）SessionThemeResolver:theme name存放在session中key值为 org.springframework.web.servlet.theme.SessionThemeResolver.THEME 的session attribute中。
+        可在运行中通过更改session中的相应的key值来动态调整theme的值。
+    （3） CookieThemeResolver:theme name存放在cookie中key值为 org.springframework.web.servlet.theme.CookieThemeResolver.THEME 中。
+
+    可在运行中通过更改cookie中的相应的key值来动态调整theme的值。
+    以上Themesource和ThemeResolver在servlet context xml中的配置示例如下 ：
+
+        <!-- 样式-->
+        <bean class="org.springframework.ui.context.support.ResourceBundleThemeSource"  id="themeSource">
+            <property name="basenamePrefix" value="theme."></property>
+        </bean>
+        <bean id="themeResolver"  class="org.springframework.web.servlet.theme.SessionThemeResolver">
+            <property name="defaultThemeName" value="red" />
+        </bean>
+
+       然后在classpath路径下创建样式文件：
+       在resource目录下创建theme文件夹：
+            blue.properties
+            red.propeerties
+       我们默认使用的是red.properties中的内容，内容为多样式文件路径：
+            helloworld=theme/red/css/helloworld.css
+       这样我们需要创建css文件了：
+            在webapp下web_info同级 创建thme.red.css.helloworld.css文件
+       创建theme.jsp，里面内容如下：
+           <%@page contentType="text/html" pageEncoding="UTF-8"%>
+           <%@ taglib prefix="spring" uri="http://www.springframework.org/tags"%>
+           <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+              "http://www.w3.org/TR/html4/loose.dtd">
+
+           <html>
+           <head>
+           <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+           <title>JSP Page</title>
+           <link rel="stylesheet" type="text/css"
+               href="<spring:theme code='helloworld'/>" />
+           </head>
+           <body>
+               <div id="divTheme"><h1><spring:message code='hello'/></h1></div>
+               <a href="changeTheme.action?themeName=blue"> blue</a>
+               <a href="changeTheme.action?themeName=gray"> gray</a>
+               <a href="changeTheme.action?themeName=red"> red</a>
+           </body>
+           </html>
+
+    Controlelr中的操作就是如下了：
+    @Controller
+    public class ThemeChange {
+        private final Log logger = LogFactory.getLog(getClass());
+
+        @Autowired
+        private ThemeResolver themeResolver;
+
+        @RequestMapping("/changeTheme")
+        public String changeTheme(HttpServletRequest request,
+                HttpServletResponse response, String themeName) {
+            if(themeName == null){
+                themeName = "red";
+            }
+            logger.info("current theme is " + themeResolver.resolveThemeName(request));
+            themeResolver.setThemeName(request, response, themeName);
+            logger.info("current theme change to " + themeResolver.resolveThemeName(request));
+            return "theme";
+        }
+    }
+
