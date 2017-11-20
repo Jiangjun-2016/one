@@ -1,0 +1,217 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:操作程序
+Interceptor：拦截
+Adapter :适配器
+Execution ：执行
+Chain ： 链
+
+0.  上一篇博客springMVC源码分析--HandlerInterceptor拦截器调用过程（二）中我们介绍了HandlerInterceptor的执行调用地方，
+    最终HandlerInterceptor调用的地方是在HandlerExecutionChain中，接下来我们就介绍一下HandlerExecutionChain。
+
+1.  HandlerExecutionChain有3个变量：
+    Object handler；不做过多介绍，存储的对象是HandlerMethod
+    HandlerInterceptor[] interceptors ：所有的HandlerInterceptor的数组
+    List<HandlerInterceptor> interceptorList：所有的HandlerInterceptor的链表
+    之前的博客中我们已经介绍了HandlerExecutionChain中执行HandlerInterceptor方法的函数
+
+    执行HandlerInterceptor的preHandler方法
+        //依次执行HandlerInterceptor实现类的preHandle函数
+        boolean applyPreHandle(HttpServletRequest request, HttpServletResponse response) throws Exception {
+            HandlerInterceptor[] interceptors = getInterceptors();
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = 0; i < interceptors.length; i++) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    if (!interceptor.preHandle(request, response, this.handler)) {
+                        triggerAfterCompletion(request, response, null);
+                        return false;
+                    }
+                    this.interceptorIndex = i;
+                }
+            }
+            return true;
+        }
+    执行HandlerInterceptor实现类的postHandle函数
+        //依次执行HandlerInterceptor实现类的postHandle函数
+        void applyPostHandle(HttpServletRequest request, HttpServletResponse response, ModelAndView mv) throws Exception {
+            HandlerInterceptor[] interceptors = getInterceptors();
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = interceptors.length - 1; i >= 0; i--) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    interceptor.postHandle(request, response, this.handler, mv);
+                }
+            }
+        }
+
+    执行HandlerInterceptor实现类的afterCompletion函数
+        //依次执行HandlerInterceptor实现类的afterCompletion函数
+        void triggerAfterCompletion(HttpServletRequest request, HttpServletResponse response, Exception ex)
+                throws Exception {
+
+            HandlerInterceptor[] interceptors = getInterceptors();
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = this.interceptorIndex; i >= 0; i--) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    try {
+                        interceptor.afterCompletion(request, response, this.handler, ex);
+                    }
+                    catch (Throwable ex2) {
+                        logger.error("HandlerInterceptor.afterCompletion threw exception", ex2);
+                    }
+                }
+            }
+        }
+
+    完整的HandlerExecutionChain的源码，主要就是以上几个函数的操作
+    public class HandlerExecutionChain {
+
+        private static final Log logger = LogFactory.getLog(HandlerExecutionChain.class);
+
+        private final Object handler;
+
+        private HandlerInterceptor[] interceptors;
+
+        private List<HandlerInterceptor> interceptorList;
+
+        private int interceptorIndex = -1;
+
+        public HandlerExecutionChain(Object handler) {
+            this(handler, (HandlerInterceptor[]) null);
+        }
+
+        public HandlerExecutionChain(Object handler, HandlerInterceptor... interceptors) {
+            if (handler instanceof HandlerExecutionChain) {
+                HandlerExecutionChain originalChain = (HandlerExecutionChain) handler;
+                this.handler = originalChain.getHandler();
+                this.interceptorList = new ArrayList<HandlerInterceptor>();
+                CollectionUtils.mergeArrayIntoCollection(originalChain.getInterceptors(), this.interceptorList);
+                CollectionUtils.mergeArrayIntoCollection(interceptors, this.interceptorList);
+            }
+            else {
+                this.handler = handler;
+                this.interceptors = interceptors;
+            }
+        }
+
+        public Object getHandler() {
+            return this.handler;
+        }
+
+        public void addInterceptor(HandlerInterceptor interceptor) {
+            initInterceptorList().add(interceptor);
+        }
+
+        public void addInterceptors(HandlerInterceptor... interceptors) {
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                initInterceptorList().addAll(Arrays.asList(interceptors));
+            }
+        }
+
+        private List<HandlerInterceptor> initInterceptorList() {
+            if (this.interceptorList == null) {
+                this.interceptorList = new ArrayList<HandlerInterceptor>();
+                if (this.interceptors != null) {
+                    // An interceptor array specified through the constructor
+                    this.interceptorList.addAll(Arrays.asList(this.interceptors));
+                }
+            }
+            this.interceptors = null;
+            return this.interceptorList;
+        }
+
+        /**
+         * Return the array of interceptors to apply (in the given order).
+         * @return the array of HandlerInterceptors instances (may be {@code null})
+         */
+        public HandlerInterceptor[] getInterceptors() {
+            if (this.interceptors == null && this.interceptorList != null) {
+                this.interceptors = this.interceptorList.toArray(new HandlerInterceptor[this.interceptorList.size()]);
+            }
+            return this.interceptors;
+        }
+
+
+        //依次执行HandlerInterceptor实现类的preHandle函数
+        boolean applyPreHandle(HttpServletRequest request, HttpServletResponse response) throws Exception {
+            HandlerInterceptor[] interceptors = getInterceptors();
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = 0; i < interceptors.length; i++) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    if (!interceptor.preHandle(request, response, this.handler)) {
+                        triggerAfterCompletion(request, response, null);
+                        return false;
+                    }
+                    this.interceptorIndex = i;
+                }
+            }
+            return true;
+        }
+
+        /**
+         * Apply postHandle methods of registered interceptors.
+         */
+        //依次执行HandlerInterceptor实现类的postHandle函数
+        void applyPostHandle(HttpServletRequest request, HttpServletResponse response, ModelAndView mv) throws Exception {
+            HandlerInterceptor[] interceptors = getInterceptors();
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = interceptors.length - 1; i >= 0; i--) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    interceptor.postHandle(request, response, this.handler, mv);
+                }
+            }
+        }
+
+        //依次执行HandlerInterceptor实现类的afterCompletion函数
+        void triggerAfterCompletion(HttpServletRequest request, HttpServletResponse response, Exception ex)
+                throws Exception {
+
+            HandlerInterceptor[] interceptors = getInterceptors();
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = this.interceptorIndex; i >= 0; i--) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    try {
+                        interceptor.afterCompletion(request, response, this.handler, ex);
+                    }
+                    catch (Throwable ex2) {
+                        logger.error("HandlerInterceptor.afterCompletion threw exception", ex2);
+                    }
+                }
+            }
+        }
+
+        //这个方法会在Controller方法异步执行时开始执行
+        void applyAfterConcurrentHandlingStarted(HttpServletRequest request, HttpServletResponse response) {
+            HandlerInterceptor[] interceptors = getInterceptors();
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = interceptors.length - 1; i >= 0; i--) {
+                    if (interceptors[i] instanceof AsyncHandlerInterceptor) {
+                        try {
+                            AsyncHandlerInterceptor asyncInterceptor = (AsyncHandlerInterceptor) interceptors[i];
+                            asyncInterceptor.afterConcurrentHandlingStarted(request, response, this.handler);
+                        }
+                        catch (Throwable ex) {
+                            logger.error("Interceptor [" + interceptors[i] + "] failed in afterConcurrentHandlingStarted", ex);
+                        }
+                    }
+                }
+            }
+        }
+
+
+        @Override
+        public String toString() {
+            if (this.handler == null) {
+                return "HandlerExecutionChain with no handler";
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("HandlerExecutionChain with handler [").append(this.handler).append("]");
+            if (!CollectionUtils.isEmpty(this.interceptorList)) {
+                sb.append(" and ").append(this.interceptorList.size()).append(" interceptor");
+                if (this.interceptorList.size() > 1) {
+                    sb.append("s");
+                }
+            }
+            return sb.toString();
+        }
+
+    }
+
