@@ -1,0 +1,233 @@
+转载（http://blog.csdn.net/qq924862077/）
+
+0.   springMVC给我们提供了国际化支持，简单来说就是设置整个系统的运行语言，然后根据系统的运行语言来展示对应语言的页面，一般我们称之为多语言。
+     springMVC国际化机制就是可以设置整个系统的运行语言，其定义了一个国际化支持接口LocaleResolver
+
+1.  springMVC国际化提供了四个默认实现的类
+    AcceptHeaderLocaleResolver，
+    FixedLocaleResolver、
+    CookieLocaleResolver和
+    SessionLocaleResolver。
+    接下来我们简单介绍一下这四个实现类的源码。
+
+    AcceptHeaderLocaleResolver：其实没有任何具体实现，是通过浏览器头部的语言信息来进行多语言选择。
+    public class AcceptHeaderLocaleResolver implements LocaleResolver {
+
+        @Override
+        public Locale resolveLocale(HttpServletRequest request) {
+            return request.getLocale();
+        }
+
+        @Override
+        public void setLocale(HttpServletRequest request, HttpServletResponse response, Locale locale) {
+            throw new UnsupportedOperationException(
+                    "Cannot change HTTP accept header - use a different locale resolution strategy");
+        }
+
+    }
+
+    FixedLocaleResolver：设置固定的语言信息，这样整个系统的语言是一成不变的，用处不大。
+
+    CookieLocaleResolver：将语言信息设置到Cookie中，这样整个系统就可以获得语言信息
+
+    public class CookieLocaleResolver extends CookieGenerator implements LocaleContextResolver {
+
+        //多语言cookie名称
+        public static final String LOCALE_REQUEST_ATTRIBUTE_NAME = CookieLocaleResolver.class.getName() + ".LOCALE";
+
+        //多语言时区cookie名称
+        public static final String TIME_ZONE_REQUEST_ATTRIBUTE_NAME = CookieLocaleResolver.class.getName() + ".TIME_ZONE";
+
+
+        //默认的多语言cookie名称
+        public static final String DEFAULT_COOKIE_NAME = CookieLocaleResolver.class.getName() + ".LOCALE";
+
+        private Locale defaultLocale;
+
+        private TimeZone defaultTimeZone;
+
+        public CookieLocaleResolver() {
+            setCookieName(DEFAULT_COOKIE_NAME);
+        }
+        public void setDefaultLocale(Locale defaultLocale) {
+            this.defaultLocale = defaultLocale;
+        }
+
+        protected Locale getDefaultLocale() {
+            return this.defaultLocale;
+        }
+
+        public void setDefaultTimeZone(TimeZone defaultTimeZone) {
+            this.defaultTimeZone = defaultTimeZone;
+        }
+
+        protected TimeZone getDefaultTimeZone() {
+            return this.defaultTimeZone;
+        }
+
+
+        @Override
+        public Locale resolveLocale(HttpServletRequest request) {
+            parseLocaleCookieIfNecessary(request);
+            return (Locale) request.getAttribute(LOCALE_REQUEST_ATTRIBUTE_NAME);
+        }
+
+        @Override
+        public LocaleContext resolveLocaleContext(final HttpServletRequest request) {
+            parseLocaleCookieIfNecessary(request);
+            return new TimeZoneAwareLocaleContext() {
+                @Override
+                public Locale getLocale() {
+                    return (Locale) request.getAttribute(LOCALE_REQUEST_ATTRIBUTE_NAME);
+                }
+                @Override
+                public TimeZone getTimeZone() {
+                    return (TimeZone) request.getAttribute(TIME_ZONE_REQUEST_ATTRIBUTE_NAME);
+                }
+            };
+        }
+        private void parseLocaleCookieIfNecessary(HttpServletRequest request) {
+            if (request.getAttribute(LOCALE_REQUEST_ATTRIBUTE_NAME) == null) {
+                // Retrieve and parse cookie value.
+                Cookie cookie = WebUtils.getCookie(request, getCookieName());
+                Locale locale = null;
+                TimeZone timeZone = null;
+                if (cookie != null) {
+                    String value = cookie.getValue();
+                    String localePart = value;
+                    String timeZonePart = null;
+                    int spaceIndex = localePart.indexOf(' ');
+                    if (spaceIndex != -1) {
+                        localePart = value.substring(0, spaceIndex);
+                        timeZonePart = value.substring(spaceIndex + 1);
+                    }
+                    locale = (!"-".equals(localePart) ? StringUtils.parseLocaleString(localePart) : null);
+                    if (timeZonePart != null) {
+                        timeZone = StringUtils.parseTimeZoneString(timeZonePart);
+                    }
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Parsed cookie value [" + cookie.getValue() + "] into locale '" + locale +
+                                "'" + (timeZone != null ? " and time zone '" + timeZone.getID() + "'" : ""));
+                    }
+                }
+                request.setAttribute(LOCALE_REQUEST_ATTRIBUTE_NAME,
+                        (locale != null ? locale: determineDefaultLocale(request)));
+                request.setAttribute(TIME_ZONE_REQUEST_ATTRIBUTE_NAME,
+                        (timeZone != null ? timeZone : determineDefaultTimeZone(request)));
+            }
+        }
+
+        @Override
+        public void setLocale(HttpServletRequest request, HttpServletResponse response, Locale locale) {
+            setLocaleContext(request, response, (locale != null ? new SimpleLocaleContext(locale) : null));
+        }
+
+        @Override
+        public void setLocaleContext(HttpServletRequest request, HttpServletResponse response, LocaleContext localeContext) {
+            Locale locale = null;
+            TimeZone timeZone = null;
+            if (localeContext != null) {
+                locale = localeContext.getLocale();
+                if (localeContext instanceof TimeZoneAwareLocaleContext) {
+                    timeZone = ((TimeZoneAwareLocaleContext) localeContext).getTimeZone();
+                }
+                addCookie(response, (locale != null ? locale : "-") + (timeZone != null ? ' ' + timeZone.getID() : ""));
+            }
+            else {
+                removeCookie(response);
+            }
+            request.setAttribute(LOCALE_REQUEST_ATTRIBUTE_NAME,
+                    (locale != null ? locale: determineDefaultLocale(request)));
+            request.setAttribute(TIME_ZONE_REQUEST_ATTRIBUTE_NAME,
+                    (timeZone != null ? timeZone : determineDefaultTimeZone(request)));
+        }
+
+        protected Locale determineDefaultLocale(HttpServletRequest request) {
+            Locale defaultLocale = getDefaultLocale();
+            if (defaultLocale == null) {
+                defaultLocale = request.getLocale();
+            }
+            return defaultLocale;
+        }
+
+        protected TimeZone determineDefaultTimeZone(HttpServletRequest request) {
+            return getDefaultTimeZone();
+        }
+
+    }
+
+    SessionLocaleResolver：与CookieLocaleResolver类似将语言信息放到Session中，这样整个系统就可以从Session中获得语言信息。
+
+    public class SessionLocaleResolver extends AbstractLocaleContextResolver {
+
+        //语言信息放到session中的名称
+        public static final String LOCALE_SESSION_ATTRIBUTE_NAME = SessionLocaleResolver.class.getName() + ".LOCALE";
+
+        public static final String TIME_ZONE_SESSION_ATTRIBUTE_NAME = SessionLocaleResolver.class.getName() + ".TIME_ZONE";
+
+
+        @Override
+        public Locale resolveLocale(HttpServletRequest request) {
+            Locale locale = (Locale) WebUtils.getSessionAttribute(request, LOCALE_SESSION_ATTRIBUTE_NAME);
+            if (locale == null) {
+                locale = determineDefaultLocale(request);
+            }
+            return locale;
+        }
+
+        @Override
+        public LocaleContext resolveLocaleContext(final HttpServletRequest request) {
+            return new TimeZoneAwareLocaleContext() {
+                @Override
+                public Locale getLocale() {
+                    Locale locale = (Locale) WebUtils.getSessionAttribute(request, LOCALE_SESSION_ATTRIBUTE_NAME);
+                    if (locale == null) {
+                        locale = determineDefaultLocale(request);
+                    }
+                    return locale;
+                }
+                @Override
+                public TimeZone getTimeZone() {
+                    TimeZone timeZone = (TimeZone) WebUtils.getSessionAttribute(request, TIME_ZONE_SESSION_ATTRIBUTE_NAME);
+                    if (timeZone == null) {
+                        timeZone = determineDefaultTimeZone(request);
+                    }
+                    return timeZone;
+                }
+            };
+        }
+
+        @Override
+        public void setLocaleContext(HttpServletRequest request, HttpServletResponse response, LocaleContext localeContext) {
+            Locale locale = null;
+            TimeZone timeZone = null;
+            if (localeContext != null) {
+                locale = localeContext.getLocale();
+                if (localeContext instanceof TimeZoneAwareLocaleContext) {
+                    timeZone = ((TimeZoneAwareLocaleContext) localeContext).getTimeZone();
+                }
+            }
+            WebUtils.setSessionAttribute(request, LOCALE_SESSION_ATTRIBUTE_NAME, locale);
+            WebUtils.setSessionAttribute(request, TIME_ZONE_SESSION_ATTRIBUTE_NAME, timeZone);
+        }
+
+        protected Locale determineDefaultLocale(HttpServletRequest request) {
+            Locale defaultLocale = getDefaultLocale();
+            if (defaultLocale == null) {
+                defaultLocale = request.getLocale();
+            }
+            return defaultLocale;
+        }
+
+        protected TimeZone determineDefaultTimeZone(HttpServletRequest request) {
+            return getDefaultTimeZone();
+        }
+
+    }
+
+
+    通过源码我们可以了解到springMVC对多语言的支持就是设置Locale的语言信息来实现的，只不过是设置了通过cookie、session等方式设置而已，
+    接下来我们会通过demo来进一步介绍这几种实现方式。
+
+
+
