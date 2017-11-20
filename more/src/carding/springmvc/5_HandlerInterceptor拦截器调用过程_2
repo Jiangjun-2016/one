@@ -1,0 +1,131 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:操作程序
+Interceptor：拦截
+Adapter :适配器
+Execution ：执行
+Chain ： 链
+
+0.  在上一篇博客springMVC源码分析--HandlerInterceptor拦截器（一）中我们介绍了HandlerInterceptor拦截器相关的内容，了解到了HandlerInterceptor提供的三个接口方法：
+    （1）preHandle: 在执行controller处理之前执行，返回值为boolean ,返回值为true时接着执行postHandle和afterCompletion，如果我们返回false则中断执行
+    （2）postHandle:在执行controller的处理后，在ModelAndView处理前执行
+    （3）afterCompletion ：在DispatchServlet执行完ModelAndView之后执行
+
+1.  我们可以看到这三个方法的调用过程是不一样的，接下来我们分析一下这个三个方法具体调用实现的地方。
+    其最终实现调用的地方是在doDispatch函数中，因为doDispatch完成了一个请求到返回数据的完整操作。
+    protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
+
+            HandlerExecutionChain mappedHandler = null;
+            .......
+            try {
+                ModelAndView mv = null;
+                Exception dispatchException = null;
+                try {
+                    .......
+                    //获取HandlerExecutionChain
+                    mappedHandler = getHandler(processedRequest);
+                    ......
+                    //最终会调用HandlerInterceptor的preHandle方法
+                    if (!mappedHandler.applyPreHandle(processedRequest, response)) {
+                        return;
+                    }
+                    // 调用具体的Controller中的处理方法Actually invoke the handler.
+                    mv = ha.handle(processedRequest, response, mappedHandler.getHandler());</span>
+                    ......
+                    //最终会调用HandlerInterceptor的postHandle方法
+                    mappedHandler.applyPostHandle(processedRequest, response, mv);
+                }
+                catch (Exception ex) {
+                    dispatchException = ex;
+                }
+                processDispatchResult(processedRequest, response, mappedHandler, mv, dispatchException);
+            }
+            catch (Exception ex) {
+                //最终会调用HandlerInterceptor的afterCompletion 方法
+                triggerAfterCompletion(processedRequest, response, mappedHandler, ex);
+            }
+            catch (Error err) {
+                //最终会调用HandlerInterceptor的afterCompletion 方法
+                triggerAfterCompletionWithError(processedRequest, response, mappedHandler, err);
+            }
+            finally {
+                if (asyncManager.isConcurrentHandlingStarted()) {
+                    // Instead of postHandle and afterCompletion
+                    if (mappedHandler != null) {
+                        mappedHandler.applyAfterConcurrentHandlingStarted(processedRequest, response);
+                    }
+                }
+                else {
+                    // Clean up any resources used by a multipart request.
+                    if (multipartRequestParsed) {
+                        cleanupMultipart(processedRequest);
+                    }
+                }
+            }
+        }
+
+    mappedHandler.applyPreHandle(processedRequest, response)：最终会调用HandlerInterceptor的preHandle方法。
+    在HandlerExecutionChain中的具体实现如下，我们可以看到会调用所有的HandlerInterceptor拦截器并调用其preHandler方法。
+        boolean applyPreHandle(HttpServletRequest request, HttpServletResponse response) throws Exception {
+            HandlerInterceptor[] interceptors = getInterceptors();//获取所有的拦截器
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = 0; i < interceptors.length; i++) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    if (!interceptor.preHandle(request, response, this.handler)) {//分别调用拦截器的preHandle方法
+                        triggerAfterCompletion(request, response, null);
+                        return false;
+                    }
+                    this.interceptorIndex = i;
+                }
+            }
+            return true;
+        }
+    mappedHandler.applyPostHandle(processedRequest, response, mv)：最终会调用HandlerInterceptor的postHandle方法
+    具体实现是在HandlerExecutionChain中实现如下，就是获取所有的拦截器并调用其postHandle方法。
+        void applyPostHandle(HttpServletRequest request, HttpServletResponse response, ModelAndView mv) throws Exception {
+            HandlerInterceptor[] interceptors = getInterceptors();//获取所有拦截器
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = interceptors.length - 1; i >= 0; i--) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    interceptor.postHandle(request, response, this.handler, mv);//分别调用拦截器的postHandle方法
+                }
+            }
+        }
+    triggerAfterCompletion(processedRequest, response, mappedHandler, ex)：最终会调用HandlerInterceptor的afterCompletion 方法
+    triggerAfterCompletionWithError(processedRequest, response, mappedHandler, err)：最终会调用HandlerInterceptor的afterCompletion 方法
+        private void triggerAfterCompletionWithError(HttpServletRequest request, HttpServletResponse response,
+                HandlerExecutionChain mappedHandler, Error error) throws Exception {
+
+            ServletException ex = new NestedServletException("Handler processing failed", error);
+            if (mappedHandler != null) {
+                mappedHandler.triggerAfterCompletion(request, response, ex);
+            }
+            throw ex;
+        }
+        private void triggerAfterCompletion(HttpServletRequest request, HttpServletResponse response,
+                HandlerExecutionChain mappedHandler, Exception ex) throws Exception {
+
+            if (mappedHandler != null) {
+                mappedHandler.triggerAfterCompletion(request, response, ex);
+            }
+            throw ex;
+        }
+        void triggerAfterCompletion(HttpServletRequest request, HttpServletResponse response, Exception ex)
+                    throws Exception {
+
+            HandlerInterceptor[] interceptors = getInterceptors();//获取所有拦截器
+            if (!ObjectUtils.isEmpty(interceptors)) {
+                for (int i = this.interceptorIndex; i >= 0; i--) {
+                    HandlerInterceptor interceptor = interceptors[i];
+                    try {
+                        interceptor.afterCompletion(request, response, this.handler, ex);//调用拦截器的afterCompletion方法
+                    }
+                    catch (Throwable ex2) {
+                        logger.error("HandlerInterceptor.afterCompletion threw exception", ex2);
+                    }
+                }
+            }
+        }
+
+        通过以上代码分析我们可以看到HandlerInterceptor拦截器的最终调用实现是在DispatcherServlet的doDispatch方法中，
+        并且SpringMVC提供了HandlerExecutionChain来帮助我们执行所有配置的HandlerInterceptor拦截器，并分别调用HandlerInterceptor所提供的方法。
+
