@@ -1,0 +1,64 @@
+转载（http://blog.csdn.net/qq924862077/）
+
+0.  springMVC对Controller执行过程中出现的异常提供了统一的处理机制，其实这种处理机制也简单，
+    只要抛出的异常在DispatcherServlet中都会进行捕获，这样就可以统一的对异常进行处理。
+    springMVC提供了一个HandlerExceptionResolver接口，其定义方法如下：
+    public interface HandlerExceptionResolver {
+
+        ModelAndView resolveException(
+                HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex);
+
+    }
+
+1.  接下来我们创建一个自己简单从异常处理类MyHandlerExceptionResolver，实现是非常简单的，
+    只要实现HandlerExceptionResolver即可，将我们实现的MyHandlerExceptionResolver注入到容器中。
+
+    public class MyHandlerExceptionResolver implements HandlerExceptionResolver{
+
+
+        @Override
+        public ModelAndView resolveException(HttpServletRequest request, HttpServletResponse response, Object handler,
+                Exception ex) {
+
+            ModelAndView mv = new ModelAndView("exception");
+            mv.addObject("errorMsg", ex.getMessage());
+            return mv;
+        }
+    }
+
+    <bean id="myHandlerExceptionResolver" class="com.tianjunwei.handlerExceptionResolver.MyHandlerExceptionResolver"></bean>
+
+    最终结果是返回一个ModelAndView对象，返回页面是exception.jsp，页面如下，展示放在errorMsg中的异常信息。
+
+    <%@ page language="java" contentType="text/html; charset=UTF-8"
+        pageEncoding="UTF-8"%>
+    <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+    <%@ taglib prefix="form" uri="http://www.springframework.org/tags/form" %>
+
+    <html>
+    <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Insert title here</title>
+    </head>
+    <body>
+        ${errorMsg}
+    </body>
+    </html>
+
+    我们创建一个抛出异常的Controller，如下：
+    @Controller
+    public class ExceptionController {
+
+        @RequestMapping("/exception")
+        public String exception() throws Exception{
+                throw new Exception("发生异常了");
+        }
+
+    }
+
+    这样访问这个Controller时会抛出异常，浏览器展示exception.jsp中的内容
+    localhost:8080/exception.do
+
+    以上就简单的实现了一个捕获所有异常并跳转到异常页面的简单示例。
+

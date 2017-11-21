@@ -1,0 +1,202 @@
+转载（http://blog.csdn.net/qq924862077/）
+
+0.  上一篇博客springMVC源码分析--异常处理机制HandlerExceptionResolver简单示例（一）中我们简单地实现了一个异常处理实例，
+    接下来我们要介绍一下HandlerExceptionResolver是如何捕获到Controller中抛出的异常并展示到前台页面的。
+
+1.  DispatcherServlet是springMVC中最重要的一个类，之前我们已经有博客对其进行介绍过，可以看看其实现机制。
+    HandlerExceptionResolver可以捕获Controller中抛出的异常，因此还是和Controller的运行机制有关，我们就想到了DispatcherServlet的doDispatch方法，
+    其异常捕获机制还是比较简单的，就是通过一个try catch来完成的，简直玩的六啊！
+        protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
+            try {
+                ModelAndView mv = null;
+                Exception dispatchException = null;
+                //开始捕获Controller执行过程中抛出的异常
+                try {
+                    processedRequest = checkMultipart(request);
+                    multipartRequestParsed = (processedRequest != request);
+
+                    // Determine handler for the current request.
+                    mappedHandler = getHandler(processedRequest);
+                    if (mappedHandler == null || mappedHandler.getHandler() == null) {
+                        noHandlerFound(processedRequest, response);
+                        return;
+                    }
+
+                    // Determine handler adapter for the current request.
+                    HandlerAdapter ha = getHandlerAdapter(mappedHandler.getHandler());
+
+                    // Process last-modified header, if supported by the handler.
+                    String method = request.getMethod();
+                    boolean isGet = "GET".equals(method);
+                    if (isGet || "HEAD".equals(method)) {
+                        long lastModified = ha.getLastModified(request, mappedHandler.getHandler());
+                        if (logger.isDebugEnabled()) {
+                            logger.debug("Last-Modified value for [" + getRequestUri(request) + "] is: " + lastModified);
+                        }
+                        if (new ServletWebRequest(request, response).checkNotModified(lastModified) && isGet) {
+                            return;
+                        }
+                    }
+
+                    if (!mappedHandler.applyPreHandle(processedRequest, response)) {
+                        return;
+                    }
+
+                    // Actually invoke the handler.
+                    mv = ha.handle(processedRequest, response, mappedHandler.getHandler());
+
+                    if (asyncManager.isConcurrentHandlingStarted()) {
+                        return;
+                    }
+
+                    applyDefaultViewName(processedRequest, mv);
+                    mappedHandler.applyPostHandle(processedRequest, response, mv);
+                }//捕获Controller执行过程中抛出的异常
+                catch (Exception ex) {
+                    dispatchException = ex;
+                }
+                //异常处理操作，与HandlerExceptionResolver的操作有关
+                processDispatchResult(processedRequest, response, mappedHandler, mv, dispatchException);
+            }
+            catch (Exception ex) {
+                triggerAfterCompletion(processedRequest, response, mappedHandler, ex);
+            }
+            catch (Error err) {
+                triggerAfterCompletionWithError(processedRequest, response, mappedHandler, err);
+            }
+            finally {
+                if (asyncManager.isConcurrentHandlingStarted()) {
+                    // Instead of postHandle and afterCompletion
+                    if (mappedHandler != null) {
+                        mappedHandler.applyAfterConcurrentHandlingStarted(processedRequest, response);
+                    }
+                }
+                else {
+                    // Clean up any resources used by a multipart request.
+                    if (multipartRequestParsed) {
+                        cleanupMultipart(processedRequest);
+                    }
+                }
+        }
+
+    在doDispatch方法中我们看到了如何捕获Controller执行过程中抛出的异常，接下来就是异常处理机制了，
+    在processDispatchResult中，红色区域是异常处理的操作，最终操作还是在processHandlerException中了。
+
+        private void processDispatchResult(HttpServletRequest request, HttpServletResponse response,
+                HandlerExecutionChain mappedHandler, ModelAndView mv, Exception exception) throws Exception {
+
+            boolean errorView = false;
+
+            if (exception != null) {
+                if (exception instanceof ModelAndViewDefiningException) {
+                    logger.debug("ModelAndViewDefiningException encountered", exception);
+                    mv = ((ModelAndViewDefiningException) exception).getModelAndView();
+                }
+                else {
+                    Object handler = (mappedHandler != null ? mappedHandler.getHandler() : null);
+                    mv = processHandlerException(request, response, handler, exception);
+                    errorView = (mv != null);
+                }
+            }
+
+            // Did the handler return a view to render?
+            if (mv != null && !mv.wasCleared()) {
+                render(mv, request, response);
+                if (errorView) {
+                    WebUtils.clearErrorRequestAttributes(request);
+                }
+            }
+            else {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Null ModelAndView returned to DispatcherServlet with name '" + getServletName() +
+                            "': assuming HandlerAdapter completed request handling");
+                }
+            }
+
+            if (WebAsyncUtils.getAsyncManager(request).isConcurrentHandlingStarted()) {
+                // Concurrent handling started during a forward
+                return;
+            }
+
+            if (mappedHandler != null) {
+                mappedHandler.triggerAfterCompletion(request, response, null);
+            }
+        }
+
+    processHandlerException中异常操作也是比较简单的，
+    springMVC启动加载时会将所有的异常处理HandlerExceptionResolver实现类存放到handlerExceptionResolvers一个map结构中，
+    当默认执行时，只要放回的exMv不为空就中止执行其他的异常处理实现类
+        protected ModelAndView processHandlerException(HttpServletRequest request, HttpServletResponse response,
+                Object handler, Exception ex) throws Exception {
+
+            // Check registered HandlerExceptionResolvers...
+            ModelAndView exMv = null;
+            for (HandlerExceptionResolver handlerExceptionResolver : this.handlerExceptionResolvers) {
+                exMv = handlerExceptionResolver.resolveException(request, response, handler, ex);
+                if (exMv != null) {
+                    break;
+                }
+            }
+            if (exMv != null) {
+                if (exMv.isEmpty()) {
+                    request.setAttribute(EXCEPTION_ATTRIBUTE, ex);
+                    return null;
+                }
+                // We might still need view name translation for a plain error model...
+                if (!exMv.hasView()) {
+                    exMv.setViewName(getDefaultViewName(request));
+                }
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Handler execution resulted in exception - forwarding to resolved error view: " + exMv, ex);
+                }
+                WebUtils.exposeErrorRequestAttributes(request, ex, getServletName());
+                return exMv;
+            }
+
+            throw ex;
+        }
+
+    最终结果就放回ModelAndView变量exMV，processDispatchResult方法执行接下来的操作
+        private void processDispatchResult(HttpServletRequest request, HttpServletResponse response,
+                HandlerExecutionChain mappedHandler, ModelAndView mv, Exception exception) throws Exception {
+
+            boolean errorView = false;
+
+            if (exception != null) {
+                if (exception instanceof ModelAndViewDefiningException) {
+                    logger.debug("ModelAndViewDefiningException encountered", exception);
+                    mv = ((ModelAndViewDefiningException) exception).getModelAndView();
+                }
+                else {
+                    Object handler = (mappedHandler != null ? mappedHandler.getHandler() : null);
+                    mv = processHandlerException(request, response, handler, exception);
+                    errorView = (mv != null);
+                }
+            }
+
+            // Did the handler return a view to render?
+            if (mv != null && !mv.wasCleared()) {
+                render(mv, request, response);
+                if (errorView) {
+                    WebUtils.clearErrorRequestAttributes(request);
+                }
+            }
+            else {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Null ModelAndView returned to DispatcherServlet with name '" + getServletName() +
+                            "': assuming HandlerAdapter completed request handling");
+                }
+            }
+
+            if (WebAsyncUtils.getAsyncManager(request).isConcurrentHandlingStarted()) {
+                // Concurrent handling started during a forward
+                return;
+            }
+
+            if (mappedHandler != null) {
+                mappedHandler.triggerAfterCompletion(request, response, null);
+            }
+        }
+
+    最终获得异常处理HandlerExceptionResolver执行后的结果ModelAndView对象，
+    完成异常页面的渲染工作。这个异常拦截处理的操作感觉设计的真是非常巧妙，希望能让大家了解springMVC的异常处理机制。
