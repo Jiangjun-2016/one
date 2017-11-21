@@ -1,0 +1,8 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+
+0.  HandlerMapping的工作就是为每个请求找到合适的请求找到一个处理器handler，
+    其实现机制简单来说就是维持了一个url到Controller关系的Map结构，
+    其提供的实际功能也是根据request请求来获取具体执行的包含Controller信息的HandlerAdapter。
+    HandlerMapping接口及实现类如下：
+
