@@ -1,0 +1,21 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+
+0.
+    HandLerMapping
+        AbstractHandlerMapping
+            AbstracctHandlerMethodMapping
+                RequestMappingInfoHandler
+                    RequestMapppingHandler
+            AbstarctUrlHandlerMapping
+                AbstractDetectingUrlHandlerMapping
+                    AbtractControllerUrlHandlerMapping
+                        ControllerBeanNameHanndlerMapping
+                        ControllerClassNameHandlerMapping
+                    BeanNameUrlHandlerMapping
+                    DefaultAnnotationHandlerMapping
+                SimpleUrlHandlerMapping
+
+1.
+
+
