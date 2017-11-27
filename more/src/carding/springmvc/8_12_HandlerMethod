@@ -1,0 +1,255 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerMapping
+        AbstractHandlerMapping
+            AbstracctHandlerMethodMapping
+                RequestMappingInfoHandler
+                    RequestMapppingHandler
+            AbstarctUrlHandlerMapping
+                AbstractDetectingUrlHandlerMapping
+                    AbtractControllerUrlHandlerMapping
+                        ControllerBeanNameHanndlerMapping
+                        ControllerClassNameHandlerMapping
+                    BeanNameUrlHandlerMapping
+                    DefaultAnnotationHandlerMapping
+                SimpleUrlHandlerMapping
+
+1.  在之前的博客中我们已经接触过HandlerMethod，接下来我们简单介绍一下HandlerMethod，简单来说HandlerMethod包含的信息包括类、方法和参数的一个信息类，
+    通过其两个构造函数我们就可以了解其功能，对应着springMVC的Controller来说就是某个url对应的某个Controller执行的方法。
+
+        /**
+         * Create an instance from a bean instance and a method.
+         */
+        public HandlerMethod(Object bean, Method method) {
+            Assert.notNull(bean, "Bean is required");
+            Assert.notNull(method, "Method is required");
+            this.bean = bean;
+            this.beanFactory = null;
+            this.beanType = ClassUtils.getUserClass(bean);
+            this.method = method;
+            this.bridgedMethod = BridgeMethodResolver.findBridgedMethod(method);
+            this.parameters = initMethodParameters();
+            this.resolvedFromHandlerMethod = null;
+        }
+
+        /**
+         * Create an instance from a bean instance, method name, and parameter types.
+         * @throws NoSuchMethodException when the method cannot be found
+         */
+        public HandlerMethod(Object bean, String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
+            Assert.notNull(bean, "Bean is required");
+            Assert.notNull(methodName, "Method name is required");
+            this.bean = bean;
+            this.beanFactory = null;
+            this.beanType = ClassUtils.getUserClass(bean);
+            this.method = bean.getClass().getMethod(methodName, parameterTypes);
+            this.bridgedMethod = BridgeMethodResolver.findBridgedMethod(this.method);
+            this.parameters = initMethodParameters();
+            this.resolvedFromHandlerMethod = null;
+        }
+完整源码如下：
+    public class HandlerMethod {
+
+        /** Logger that is available to subclasses */
+        protected final Log logger = LogFactory.getLog(getClass());
+
+        private final Object bean;
+
+        private final BeanFactory beanFactory;
+
+        private final Class<?> beanType;
+
+        private final Method method;
+
+        private final Method bridgedMethod;
+
+        private final MethodParameter[] parameters;
+
+        private final HandlerMethod resolvedFromHandlerMethod;
+
+        //创建一个实例，根据bean实例和method方法
+        public HandlerMethod(Object bean, Method method) {
+            Assert.notNull(bean, "Bean is required");
+            Assert.notNull(method, "Method is required");
+            this.bean = bean;
+            this.beanFactory = null;
+            this.beanType = ClassUtils.getUserClass(bean);
+            this.method = method;
+            this.bridgedMethod = BridgeMethodResolver.findBridgedMethod(method);
+            this.parameters = initMethodParameters();
+            this.resolvedFromHandlerMethod = null;
+        }
+        //根据bean，方法名以及参数类型创建实例
+        public HandlerMethod(Object bean, String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
+            Assert.notNull(bean, "Bean is required");
+            Assert.notNull(methodName, "Method name is required");
+            this.bean = bean;
+            this.beanFactory = null;
+            this.beanType = ClassUtils.getUserClass(bean);
+            this.method = bean.getClass().getMethod(methodName, parameterTypes);
+            this.bridgedMethod = BridgeMethodResolver.findBridgedMethod(this.method);
+            this.parameters = initMethodParameters();
+            this.resolvedFromHandlerMethod = null;
+        }
+        //根据bean名称，BeanFactory工厂和method方法创建实例
+        public HandlerMethod(String beanName, BeanFactory beanFactory, Method method) {
+            Assert.hasText(beanName, "Bean name is required");
+            Assert.notNull(beanFactory, "BeanFactory is required");
+            Assert.notNull(method, "Method is required");
+            this.bean = beanName;
+            this.beanFactory = beanFactory;
+            this.beanType = ClassUtils.getUserClass(beanFactory.getType(beanName));
+            this.method = method;
+            this.bridgedMethod = BridgeMethodResolver.findBridgedMethod(method);
+            this.parameters = initMethodParameters();
+            this.resolvedFromHandlerMethod = null;
+        }
+
+        protected HandlerMethod(HandlerMethod handlerMethod) {
+            Assert.notNull(handlerMethod, "HandlerMethod is required");
+            this.bean = handlerMethod.bean;
+            this.beanFactory = handlerMethod.beanFactory;
+            this.beanType = handlerMethod.beanType;
+            this.method = handlerMethod.method;
+            this.bridgedMethod = handlerMethod.bridgedMethod;
+            this.parameters = handlerMethod.parameters;
+            this.resolvedFromHandlerMethod = handlerMethod.resolvedFromHandlerMethod;
+        }
+        private HandlerMethod(HandlerMethod handlerMethod, Object handler) {
+            Assert.notNull(handlerMethod, "HandlerMethod is required");
+            Assert.notNull(handler, "Handler object is required");
+            this.bean = handler;
+            this.beanFactory = handlerMethod.beanFactory;
+            this.beanType = handlerMethod.beanType;
+            this.method = handlerMethod.method;
+            this.bridgedMethod = handlerMethod.bridgedMethod;
+            this.parameters = handlerMethod.parameters;
+            this.resolvedFromHandlerMethod = handlerMethod;
+        }
+
+
+        private MethodParameter[] initMethodParameters() {
+            int count = this.bridgedMethod.getParameterTypes().length;
+            MethodParameter[] result = new MethodParameter[count];
+            for (int i = 0; i < count; i++) {
+                result[i] = new HandlerMethodParameter(i);
+            }
+            return result;
+        }
+
+        public Object getBean() {
+            return this.bean;
+        }
+
+        public Method getMethod() {
+            return this.method;
+        }
+
+        public Class<?> getBeanType() {
+            return this.beanType;
+        }
+
+        protected Method getBridgedMethod() {
+            return this.bridgedMethod;
+        }
+
+        public MethodParameter[] getMethodParameters() {
+            return this.parameters;
+        }
+
+        public HandlerMethod getResolvedFromHandlerMethod() {
+            return this.resolvedFromHandlerMethod;
+        }
+
+        public MethodParameter getReturnType() {
+            return new HandlerMethodParameter(-1);
+        }
+
+        public MethodParameter getReturnValueType(Object returnValue) {
+            return new ReturnValueMethodParameter(returnValue);
+        }
+
+        public boolean isVoid() {
+            return Void.TYPE.equals(getReturnType().getParameterType());
+        }
+
+        //获取方法上的注解，单个注解，如果没有注解则返回方法本身
+        public <A extends Annotation> A getMethodAnnotation(Class<A> annotationType) {
+            return AnnotatedElementUtils.findMergedAnnotation(this.method, annotationType);
+        }
+
+        //创建handlerMethod
+        public HandlerMethod createWithResolvedBean() {
+            Object handler = this.bean;
+            if (this.bean instanceof String) {
+                String beanName = (String) this.bean;
+                handler = this.beanFactory.getBean(beanName);
+            }
+            return new HandlerMethod(this, handler);
+        }
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof HandlerMethod)) {
+                return false;
+            }
+            HandlerMethod otherMethod = (HandlerMethod) other;
+            return (this.bean.equals(otherMethod.bean) && this.method.equals(otherMethod.method));
+        }
+
+        @Override
+        public int hashCode() {
+            return (this.bean.hashCode() * 31 + this.method.hashCode());
+        }
+
+        @Override
+        public String toString() {
+            return this.method.toGenericString();
+        }
+
+
+        /**
+         * A MethodParameter with HandlerMethod-specific behavior.
+         */
+        protected class HandlerMethodParameter extends SynthesizingMethodParameter {
+
+            public HandlerMethodParameter(int index) {
+                super(HandlerMethod.this.bridgedMethod, index);
+            }
+
+            @Override
+            public Class<?> getContainingClass() {
+                return HandlerMethod.this.getBeanType();
+            }
+
+            @Override
+            public <T extends Annotation> T getMethodAnnotation(Class<T> annotationType) {
+                return HandlerMethod.this.getMethodAnnotation(annotationType);
+            }
+        }
+
+
+        /**
+         * A MethodParameter for a HandlerMethod return type based on an actual return value.
+         */
+        private class ReturnValueMethodParameter extends HandlerMethodParameter {
+
+            private final Object returnValue;
+
+            public ReturnValueMethodParameter(Object returnValue) {
+                super(-1);
+                this.returnValue = returnValue;
+            }
+
+            @Override
+            public Class<?> getParameterType() {
+                return (this.returnValue != null ? this.returnValue.getClass() : super.getParameterType());
+            }
+        }
+
+    }

@@ -1,0 +1,116 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerMapping
+        AbstractHandlerMapping
+            AbstracctHandlerMethodMapping
+                RequestMappingInfoHandler
+                    RequestMapppingHandler
+            AbstarctUrlHandlerMapping
+                AbstractDetectingUrlHandlerMapping
+                    AbtractControllerUrlHandlerMapping
+                        ControllerBeanNameHanndlerMapping
+                        ControllerClassNameHandlerMapping
+                    BeanNameUrlHandlerMapping
+                    DefaultAnnotationHandlerMapping
+                SimpleUrlHandlerMapping
+
+1.  在之前的博客 springMVC源码分析--AbstractHandlerMapping（二）中我们介绍了AbstractHandlerMethodMapping的父类AbstractHandlerMapping，
+    其定义了抽象方法getHandlerInternal(HttpServletRequest request)，我看一下其在AbstractHandlerMethodMapping中的实现。
+
+    在AbstractHandlerMethodMapping中getHandlerInternal的实现如下：
+        //根据request来获取HandlerMethod
+        @Override
+        protected HandlerMethod getHandlerInternal(HttpServletRequest request) throws Exception {
+            //获取请求连接
+            String lookupPath = getUrlPathHelper().getLookupPathForRequest(request);
+            if (logger.isDebugEnabled()) {
+                logger.debug("Looking up handler method for path " + lookupPath);
+            }
+            //读锁
+            this.mappingRegistry.acquireReadLock();
+            try {
+                //获取HandlerMethod
+                HandlerMethod handlerMethod = lookupHandlerMethod(lookupPath, request);
+                if (logger.isDebugEnabled()) {
+                    if (handlerMethod != null) {
+                        logger.debug("Returning handler method [" + handlerMethod + "]");
+                    }
+                    else {
+                        logger.debug("Did not find handler method for [" + lookupPath + "]");
+                    }
+                }
+                return (handlerMethod != null ? handlerMethod.createWithResolvedBean() : null);
+            }
+            finally {
+                this.mappingRegistry.releaseReadLock();
+            }
+        }
+
+    具体的实现是在lookupHandlerMethod中，最终是在mappingRegistry中获取HandlerMethod，mappingRegistry可以看似是一个Map结构（其实其包含了3个map），
+    包含了url和HandlerMethod的对应关系。
+        protected HandlerMethod lookupHandlerMethod(String lookupPath, HttpServletRequest request) throws Exception {
+            List<Match> matches = new ArrayList<Match>();
+            //从mappingRegistry中获取directPathMatches匹配关系
+            List<T> directPathMatches = this.mappingRegistry.getMappingsByUrl(lookupPath);
+            if (directPathMatches != null) {
+                addMatchingMappings(directPathMatches, matches, request);
+            }
+            if (matches.isEmpty()) {
+                // No choice but to go through all mappings...
+                addMatchingMappings(this.mappingRegistry.getMappings().keySet(), matches, request);
+            }
+            //最终返回HandlerMethod
+            if (!matches.isEmpty()) {
+                Comparator<Match> comparator = new MatchComparator(getMappingComparator(request));
+                Collections.sort(matches, comparator);
+                if (logger.isTraceEnabled()) {
+                    logger.trace("Found " + matches.size() + " matching mapping(s) for [" +
+                            lookupPath + "] : " + matches);
+                }
+                Match bestMatch = matches.get(0);
+                if (matches.size() > 1) {
+                    if (CorsUtils.isPreFlightRequest(request)) {
+                        return PREFLIGHT_AMBIGUOUS_MATCH;
+                    }
+                    Match secondBestMatch = matches.get(1);
+                    if (comparator.compare(bestMatch, secondBestMatch) == 0) {
+                        Method m1 = bestMatch.handlerMethod.getMethod();
+                        Method m2 = secondBestMatch.handlerMethod.getMethod();
+                        throw new IllegalStateException("Ambiguous handler methods mapped for HTTP path '" +
+                                request.getRequestURL() + "': {" + m1 + ", " + m2 + "}");
+                    }
+                }
+                handleMatch(bestMatch.mapping, lookupPath, request);
+                return bestMatch.handlerMethod;
+            }
+            else {
+                return handleNoMatch(this.mappingRegistry.getMappings().keySet(), lookupPath, request);
+            }
+        }
+
+    以下几个方法是在查找url和HandlerMethod的过程中一些帮助实现。
+        private void addMatchingMappings(Collection<T> mappings, List<Match> matches, HttpServletRequest request) {
+            for (T mapping : mappings) {
+                T match = getMatchingMapping(mapping, request);
+                if (match != null) {
+                    matches.add(new Match(match, this.mappingRegistry.getMappings().get(mapping)));
+                }
+            }
+        }
+        //在子类中实现
+        protected abstract T getMatchingMapping(T mapping, HttpServletRequest request);
+
+        protected abstract Comparator<T> getMappingComparator(HttpServletRequest request);
+
+        protected void handleMatch(T mapping, String lookupPath, HttpServletRequest request) {
+            request.setAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE, lookupPath);
+        }
+        //在子类中实现
+        protected HandlerMethod handleNoMatch(Set<T> mappings, String lookupPath, HttpServletRequest request)
+                throws Exception {
+
+            return null;
+        }
