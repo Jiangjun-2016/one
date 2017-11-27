@@ -16,6 +16,98 @@ Handler:处理
                     DefaultAnnotationHandlerMapping
                 SimpleUrlHandlerMapping
 
-1.
+1.  在上一博客中我们介绍了handlerMap有一个注册url和Handler关系的注册函数，这个函数的调用是在实现类SimpleUrlHandlerMapping中实现的，
+    目的是springMVC容器启动时将url和handler的对应关系注册到handlerMap中。
+
+    SimpleUrlHandlerMapping有一个初始化容器上下问的操作，
+    调用父类的super.initApplicationContext会将bean注入到容器中，
+    registerHandlers将url和Handler的对应关系注册到urlMap中，
+    容器初始化之后会调用setMappings或者setUrlMap将url和handler的对应关系注册的urlMap中。
+
+        public void setMappings(Properties mappings) {
+            CollectionUtils.mergePropertiesIntoMap(mappings, this.urlMap);
+        }
+
+        public void setUrlMap(Map<String, ?> urlMap) {
+            this.urlMap.putAll(urlMap);
+        }
+
+        //重写父类的方法，注册到父类的map中
+        @Override
+        public void initApplicationContext() throws BeansException {
+            super.initApplicationContext();
+            registerHandlers(this.urlMap);
+        }
+    registerHandlers的实现如下，会调用上一篇博客中我们介绍的registerHandler函数，完成url和handler的关系注册。
+        //将所有的url和Handler的对应关系放到父类AbstractURLHandlerMapping的map中
+        protected void registerHandlers(Map<String, Object> urlMap) throws BeansException {
+            if (urlMap.isEmpty()) {
+                logger.warn("Neither 'urlMap' nor 'mappings' set on SimpleUrlHandlerMapping");
+            }
+            else {
+                for (Map.Entry<String, Object> entry : urlMap.entrySet()) {
+                    String url = entry.getKey();
+                    Object handler = entry.getValue();
+                    // Prepend with slash if not already present.
+                    if (!url.startsWith("/")) {
+                        url = "/" + url;
+                    }
+                    // Remove whitespace from handler bean name.
+                    if (handler instanceof String) {
+                        handler = ((String) handler).trim();
+                    }
+                    registerHandler(url, handler);
+                }
+            }
+        }
+    越是到了实现子类，子类需要完成的功能越少，SimpleUrlHandlerMapping完成的工作就是容器初始化时获取所有的url和handler的对应关系，
+    将url和handler的关系注册到handlerMap中即可，它的使命就完成了。
+
+SimpleUrlHandlerMapping完整代码如下：
+    public class SimpleUrlHandlerMapping extends AbstractUrlHandlerMapping {
+
+        private final Map<String, Object> urlMap = new HashMap<String, Object>();
+
+        public void setMappings(Properties mappings) {
+            CollectionUtils.mergePropertiesIntoMap(mappings, this.urlMap);
+        }
+
+        public void setUrlMap(Map<String, ?> urlMap) {
+            this.urlMap.putAll(urlMap);
+        }
 
 
+        public Map<String, ?> getUrlMap() {
+            return this.urlMap;
+        }
+
+        //重写父类的方法，注册到父类的map中
+        @Override
+        public void initApplicationContext() throws BeansException {
+            super.initApplicationContext();
+            registerHandlers(this.urlMap);
+        }
+
+        //将所有的url和Handler的对应关系放到父类AbstractURLHandlerMapping的map中
+        protected void registerHandlers(Map<String, Object> urlMap) throws BeansException {
+            if (urlMap.isEmpty()) {
+                logger.warn("Neither 'urlMap' nor 'mappings' set on SimpleUrlHandlerMapping");
+            }
+            else {
+                for (Map.Entry<String, Object> entry : urlMap.entrySet()) {
+                    String url = entry.getKey();
+                    Object handler = entry.getValue();
+                    // Prepend with slash if not already present.
+                    if (!url.startsWith("/")) {
+                        url = "/" + url;
+                    }
+                    // Remove whitespace from handler bean name.
+                    if (handler instanceof String) {
+                        handler = ((String) handler).trim();
+                    }
+                    registerHandler(url, handler);
+                }
+            }
+        }
+
+    }
