@@ -1,0 +1,173 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerMapping
+        AbstractHandlerMapping
+            AbstracctHandlerMethodMapping
+                RequestMappingInfoHandler
+                    RequestMapppingHandler
+            AbstarctUrlHandlerMapping
+                AbstractDetectingUrlHandlerMapping
+                    AbtractControllerUrlHandlerMapping
+                        ControllerBeanNameHanndlerMapping
+                        ControllerClassNameHandlerMapping
+                    BeanNameUrlHandlerMapping
+                    DefaultAnnotationHandlerMapping
+                SimpleUrlHandlerMapping
+
+1.  AbstractDetectingUrlHandlerMapping，其定义了一个抽象方法determineUrlsForHandler在子类AbstractControllerUrlHandlerMapping中实现。
+
+    子类中AbstractControllerUrlHandlerMapping中determineUrlsForHandler的实现如下，实现原理就是根据beanName从容器中获取bean，
+    然后调用buildUrlsForHandler完成beanName和beanClass的对应关系，
+    其具体实现还是在其子类中实现。
+    @Override
+    protected String[] determineUrlsForHandler(String beanName) {
+        Class<?> beanClass = getApplicationContext().getType(beanName);
+        //判断是不是支持的类型
+        if (isEligibleForMapping(beanName, beanClass)) {
+            //模板方法，在子类实现
+            return buildUrlsForHandler(beanName, beanClass);
+        }
+        else {
+            return null;
+        }
+    }
+
+    抽象方法buildUrlsForHandler
+    protected abstract String[] buildUrlsForHandler(String beanName, Class<?> beanClass);
+
+    除此之外AbstractControllerUrlHandlerMapping还提供了一些配置，用于排除掉一些包或者一些类，可以在配置中进行配置
+        public void setIncludeAnnotatedControllers(boolean includeAnnotatedControllers) {
+            this.predicate = (includeAnnotatedControllers ?
+                    new AnnotationControllerTypePredicate() : new ControllerTypePredicate());
+        }
+
+        public void setExcludedPackages(String... excludedPackages) {
+            this.excludedPackages = (excludedPackages != null) ?
+                    new HashSet<String>(Arrays.asList(excludedPackages)) : new HashSet<String>();
+        }
+
+        public void setExcludedClasses(Class<?>... excludedClasses) {
+            this.excludedClasses = (excludedClasses != null) ?
+                    new HashSet<Class<?>>(Arrays.asList(excludedClasses)) : new HashSet<Class<?>>();
+        }
+
+    判断beanName和beanClass是否已经配置排除对应关系。
+        protected boolean isEligibleForMapping(String beanName, Class<?> beanClass) {
+            if (beanClass == null) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Excluding controller bean '" + beanName + "' from class name mapping " +
+                            "because its bean type could not be determined");
+                }
+                return false;
+            }
+            if (this.excludedClasses.contains(beanClass)) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Excluding controller bean '" + beanName + "' from class name mapping " +
+                            "because its bean class is explicitly excluded: " + beanClass.getName());
+                }
+                return false;
+            }
+            String beanClassName = beanClass.getName();
+            for (String packageName : this.excludedPackages) {
+                if (beanClassName.startsWith(packageName)) {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Excluding controller bean '" + beanName + "' from class name mapping " +
+                                "because its bean class is defined in an excluded package: " + beanClass.getName());
+                    }
+                    return false;
+                }
+            }
+            //
+            return isControllerType(beanClass);
+        }
+
+    总结：
+    AbstractControllerUrlHandlerMapping的实现机制就是根据beanName从容器中获取实现类beanClass，
+    同时beanName和beanClass的对应关系的操作是在其子类中完成实现的，
+    同时AbstractControllerUrlHandlerMapping提供了一些配置用于排除一些类的关系。
+
+AbstractControllerUrlHandlerMapping完整源码如下：
+    public abstract class AbstractControllerUrlHandlerMapping extends AbstractDetectingUrlHandlerMapping  {
+
+        private ControllerTypePredicate predicate = new AnnotationControllerTypePredicate();
+
+        private Set<String> excludedPackages = Collections.singleton("org.springframework.web.servlet.mvc");
+
+        private Set<Class<?>> excludedClasses = Collections.emptySet();
+
+        public void setIncludeAnnotatedControllers(boolean includeAnnotatedControllers) {
+            this.predicate = (includeAnnotatedControllers ?
+                    new AnnotationControllerTypePredicate() : new ControllerTypePredicate());
+        }
+
+        public void setExcludedPackages(String... excludedPackages) {
+            this.excludedPackages = (excludedPackages != null) ?
+                    new HashSet<String>(Arrays.asList(excludedPackages)) : new HashSet<String>();
+        }
+
+        public void setExcludedClasses(Class<?>... excludedClasses) {
+            this.excludedClasses = (excludedClasses != null) ?
+                    new HashSet<Class<?>>(Arrays.asList(excludedClasses)) : new HashSet<Class<?>>();
+        }
+
+
+        @Override
+        protected String[] determineUrlsForHandler(String beanName) {
+            Class<?> beanClass = getApplicationContext().getType(beanName);
+            //判断是不是支持的类型
+            if (isEligibleForMapping(beanName, beanClass)) {
+                //模板方法，在子类实现
+                return buildUrlsForHandler(beanName, beanClass);
+            }
+            else {
+                return null;
+            }
+        }
+
+
+        protected boolean isEligibleForMapping(String beanName, Class<?> beanClass) {
+            if (beanClass == null) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Excluding controller bean '" + beanName + "' from class name mapping " +
+                            "because its bean type could not be determined");
+                }
+                return false;
+            }
+            if (this.excludedClasses.contains(beanClass)) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Excluding controller bean '" + beanName + "' from class name mapping " +
+                            "because its bean class is explicitly excluded: " + beanClass.getName());
+                }
+                return false;
+            }
+            String beanClassName = beanClass.getName();
+            for (String packageName : this.excludedPackages) {
+                if (beanClassName.startsWith(packageName)) {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Excluding controller bean '" + beanName + "' from class name mapping " +
+                                "because its bean class is defined in an excluded package: " + beanClass.getName());
+                    }
+                    return false;
+                }
+            }
+            //
+            return isControllerType(beanClass);
+        }
+
+        //判断是否实现了Controller接口或者使用了@Controller
+        protected boolean isControllerType(Class<?> beanClass) {
+            return this.predicate.isControllerType(beanClass);
+        }
+
+        protected boolean isMultiActionControllerType(Class<?> beanClass) {
+            return this.predicate.isMultiActionControllerType(beanClass);
+        }
+
+        protected abstract String[] buildUrlsForHandler(String beanName, Class<?> beanClass);
+
+    }
+
+
