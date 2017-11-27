@@ -1,0 +1,49 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerMapping
+        AbstractHandlerMapping
+            AbstracctHandlerMethodMapping
+                RequestMappingInfoHandler
+                    RequestMapppingHandler
+            AbstarctUrlHandlerMapping
+                AbstractDetectingUrlHandlerMapping
+                    AbtractControllerUrlHandlerMapping
+                        ControllerBeanNameHanndlerMapping
+                        ControllerClassNameHandlerMapping
+                    BeanNameUrlHandlerMapping
+                    DefaultAnnotationHandlerMapping
+                SimpleUrlHandlerMapping
+
+1.  在上一篇博客 springMVC源码分析--AbstractDetectingUrlHandlerMapping（五）中我们介绍了AbstractUrlHandlerMapping，其定义了一个抽象函数
+        //抽象方法，子类中实现
+        protected abstract String[] determineUrlsForHandler(String beanName);
+
+    在AbstractUrlHandlerMapping的子类BeanNameUrlHandlerMapping中的实现如下：
+    public class BeanNameUrlHandlerMapping extends AbstractDetectingUrlHandlerMapping {
+        /**
+         * Checks name and aliases of the given bean for URLs, starting with "/".
+         */
+        @Override
+        protected String[] determineUrlsForHandler(String beanName) {
+            List<String> urls = new ArrayList<String>();
+            if (beanName.startsWith("/")) {
+                urls.add(beanName);
+            }
+            //注入的bean name为请求链接
+            String[] aliases = getApplicationContext().getAliases(beanName);
+            for (String alias : aliases) {
+                if (alias.startsWith("/")) {
+                    urls.add(alias);
+                }
+            }
+            return StringUtils.toStringArray(urls);
+        }
+
+    }
+
+    BeanNameUrlHandlerMapping主要个作用就是将beanName及其别名作为url。
+
+
