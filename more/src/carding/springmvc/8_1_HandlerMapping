@@ -1,8 +1,94 @@
 转载（http://blog.csdn.net/qq924862077/）
 Handler:处理
 
-0.  HandlerMapping的工作就是为每个请求找到合适的请求找到一个处理器handler，
+0.  HandlerMapping的工作就是为每个请求找到一个处理器handler，
     其实现机制简单来说就是维持了一个url到Controller关系的Map结构，
     其提供的实际功能也是根据request请求来获取具体执行的包含Controller信息的HandlerAdapter。
     HandlerMapping接口及实现类如下：
+
+    HandLerMapping
+        AbstractHandlerMapping
+            AbstracctHandlerMethodMapping
+                RequestMappingInfoHandler
+                    RequestMapppingHandler
+            AbstarctUrlHandlerMapping
+                AbstractDetectingUrlHandlerMapping
+                    AbtractControllerUrlHandlerMapping
+                        ControllerBeanNameHanndlerMapping
+                        ControllerClassNameHandlerMapping
+                    BeanNameUrlHandlerMapping
+                    DefaultAnnotationHandlerMapping
+                SimpleUrlHandlerMapping
+
+
+1.  HandlerMapping 接口：
+    接口中主要定义了一个getHandler方法，返回一个HandlerExecutionChain对象springMVC源码分析
+
+2.  AbstractHandlerMapping 抽象类：
+    （1）实现了接口的getHandler方法
+    （2）定义了getHandlerInternal方法，返回HandlerMethod
+    （3）定义了getHandlerExecutionChain方法，返回HandlerExecutionChain
+
+    通过上图我们可以看到接下来是两个抽象类及其子类AbstractHandlerMethodMapping和AbstractUrlHandlerMapping
+    一、AbstractHandlerMethodMapping系列是将具体的Method作为Handler来使用的，也是我们用的最多的，
+    比如经常使用的@RequestMapping所注释的方法就是这种Handler，这种Handler是HandlerMethod
+    二、AbstractUrlHandlerMapping是通过url来进行匹配的，大致原理就是将url与对应的Handler保存在一个map中。
+
+3.  接下来我们会用多篇博客对整个HandlerMapping的实现类进行介绍。
+
+    在DispatcherServlet的doDispatch方法中实现如下：
+    protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
+        HandlerExecutionChain mappedHandler = null;
+        ........
+        mappedHandler = getHandler(processedRequest);
+        ........
+    }
+
+    getHandler方法的操作就是选择HandlerMapping，调用getHandler(request)方法获得HandlerExecutionChain
+    protected HandlerExecutionChain getHandler(HttpServletRequest request) throws Exception {
+            for (HandlerMapping hm : this.handlerMappings) {
+                if (logger.isTraceEnabled()) {
+                    logger.trace(
+                            "Testing handler map [" + hm + "] in DispatcherServlet with name '" + getServletName() + "'");
+                }
+                HandlerExecutionChain handler = hm.getHandler(request);
+                if (handler != null) {
+                    return handler;
+                }
+            }
+            return null;
+    }
+
+    接口HandlerMapping定义的方法很简单就是一个getHandler方法，采用模板方法模式，很多实现是在子类中具体实现的。
+    /**
+     *handlerMapping的工作就是为了请求找到合适的处理器handler
+     *最常用的两个handlerMapping：BeanNameURLHandlerMapping：查找spring容器中和请求的url同名的bena
+     *SimpleUrlHandlerMapping：配置请求url和handler的映射关系
+     */
+    public interface HandlerMapping {
+
+
+        String PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE = HandlerMapping.class.getName() + ".pathWithinHandlerMapping";
+
+        String BEST_MATCHING_PATTERN_ATTRIBUTE = HandlerMapping.class.getName() + ".bestMatchingPattern";
+
+        String INTROSPECT_TYPE_LEVEL_MAPPING = HandlerMapping.class.getName() + ".introspectTypeLevelMapping";
+
+        String URI_TEMPLATE_VARIABLES_ATTRIBUTE = HandlerMapping.class.getName() + ".uriTemplateVariables";
+
+        String MATRIX_VARIABLES_ATTRIBUTE = HandlerMapping.class.getName() + ".matrixVariables";
+
+        String PRODUCIBLE_MEDIA_TYPES_ATTRIBUTE = HandlerMapping.class.getName() + ".producibleMediaTypes";
+
+        //获得HandlerExecutionChain
+        HandlerExecutionChain getHandler(HttpServletRequest request) throws Exception;
+
+    }
+
+    总结：我们简单的介绍了一下HandlerMapping及其实现类，
+    简单来说HandlerMapping的实现机制就是根据request来获得HandlerExecutionChain，
+    其实就是获取真正要执行的Controller或者某个具体的方法。
+    HandlerMapping接口提供的唯一的方法就是
+    HandlerExecutionChain getHandler(HttpServletRequest request)
+
 
