@@ -1,0 +1,408 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+
+0.
+    HandLerMapping
+        AbstractHandlerMapping
+            AbstracctHandlerMethodMapping
+                RequestMappingInfoHandler
+                    RequestMapppingHandler
+            AbstarctUrlHandlerMapping
+                AbstractDetectingUrlHandlerMapping
+                    AbtractControllerUrlHandlerMapping
+                        ControllerBeanNameHanndlerMapping
+                        ControllerClassNameHandlerMapping
+                    BeanNameUrlHandlerMapping
+                    DefaultAnnotationHandlerMapping
+                SimpleUrlHandlerMapping
+
+
+1.  HandlerMapping中定义了方法getHandler（HttpServletRequest request），AbstractHandlerMapping中的实现如下：
+    //获得一个HandlerExecutionChain
+    @Override
+    public final HandlerExecutionChain getHandler(HttpServletRequest request) throws Exception {
+        //从实现类中获得HanlderMethod
+        Object handler = getHandlerInternal(request);
+        if (handler == null) {
+            handler = getDefaultHandler();
+        }
+        if (handler == null) {
+            return null;
+        }
+        // Bean name or resolved handler?
+        if (handler instanceof String) {
+            String handlerName = (String) handler;
+            handler = getApplicationContext().getBean(handlerName);
+        }
+        //获得HandlerExecutionChain
+        HandlerExecutionChain executionChain = getHandlerExecutionChain(handler, request);
+        if (CorsUtils.isCorsRequest(request)) {
+            CorsConfiguration globalConfig = this.corsConfigSource.getCorsConfiguration(request);
+            CorsConfiguration handlerConfig = getCorsConfiguration(handler, request);
+            CorsConfiguration config = (globalConfig != null ? globalConfig.combine(handlerConfig) : handlerConfig);
+            executionChain = getCorsHandlerExecutionChain(request, executionChain, config);
+        }
+        return executionChain;
+    }
+
+    在getHandler方法中又出现了两个方法getHandlerInternal（request），在子类中实现，目的就是获取要执行的Controller。
+
+    //模板方法，用于子类中实现，通过request去查找对应的执行方法HandlerMethod
+        protected abstract Object getHandlerInternal(HttpServletRequest request) throws Exception;
+
+    getHandlerExecutionChain就是创建一个HandlerExecutionChain实例，参数值就是handler和request。
+        protected HandlerExecutionChain getHandlerExecutionChain(Object handler, HttpServletRequest request) {
+            //如果没有获得则创建一个
+            HandlerExecutionChain chain = (handler instanceof HandlerExecutionChain ?
+                    (HandlerExecutionChain) handler : new HandlerExecutionChain(handler));
+            //获得IP地址及端口后的URL地址
+            String lookupPath = this.urlPathHelper.getLookupPathForRequest(request);
+            //在HandlerExecutionChain中添加拦截器
+            for (HandlerInterceptor interceptor : this.adaptedInterceptors) {
+                if (interceptor instanceof MappedInterceptor) {
+                    MappedInterceptor mappedInterceptor = (MappedInterceptor) interceptor;
+                    //根据lookupPath来获取Interceptor
+                    if (mappedInterceptor.matches(lookupPath, this.pathMatcher)) {
+                        chain.addInterceptor(mappedInterceptor.getInterceptor());
+                    }
+                }
+                else {
+                    chain.addInterceptor(interceptor);
+                }
+            }
+            return chain;
+        }
+
+    AbstractHandlerMapping提供了设置不同HandlerMapping的执行顺序oder。
+        //设置不同HandlerMapping实现类的执行顺序
+        public final void setOrder(int order) {
+          this.order = order;
+        }
+
+        @Override
+        public final int getOrder() {
+          return this.order;
+        }
+
+    除了以上几个重要的方法外，AbstractHandlerMapping还提供了进行拦截器初始化的一些操作。
+        //初始化时调用，初始化一些基本信息，这里主要是初始化一些拦截器
+        @Override
+        protected void initApplicationContext() throws BeansException {
+            extendInterceptors(this.interceptors);//添加或修车intercept，现在并没有具体实现
+            detectMappedInterceptors(this.adaptedInterceptors);//将springMVC容器或者父容器中的所有MappedInterceptor类型的Bean添加到mappedInterceptors属性中
+            initInterceptors();
+        }
+
+        protected void extendInterceptors(List<Object> interceptors) {
+        }
+
+        //将springMVC容器或者父容器中的所有MappedInterceptor类型的Bean添加到mappedInterceptors属性中
+        protected void detectMappedInterceptors(List<HandlerInterceptor> mappedInterceptors) {
+            mappedInterceptors.addAll(
+                    BeanFactoryUtils.beansOfTypeIncludingAncestors(
+                            getApplicationContext(), MappedInterceptor.class, true, false).values());
+        }
+
+        //初始化Interceptor,将interceptors属性里所包含的对象按类型添加到mappedInterceptors或者adaptedInterceptors中。
+        protected void initInterceptors() {
+            if (!this.interceptors.isEmpty()) {
+                for (int i = 0; i < this.interceptors.size(); i++) {
+                    Object interceptor = this.interceptors.get(i);
+                    if (interceptor == null) {
+                        throw new IllegalArgumentException("Entry number " + i + " in interceptors array is null");
+                    }
+                    this.adaptedInterceptors.add(adaptInterceptor(interceptor));
+                }
+            }
+        }
+
+        protected HandlerInterceptor adaptInterceptor(Object interceptor) {
+            if (interceptor instanceof HandlerInterceptor) {
+                return (HandlerInterceptor) interceptor;
+            }
+            else if (interceptor instanceof WebRequestInterceptor) {
+                return new WebRequestHandlerInterceptorAdapter((WebRequestInterceptor) interceptor);
+            }
+            else {
+                throw new IllegalArgumentException("Interceptor type not supported: " + interceptor.getClass().getName());
+            }
+        }
+
+        protected final HandlerInterceptor[] getAdaptedInterceptors() {
+            int count = this.adaptedInterceptors.size();
+            return (count > 0 ? this.adaptedInterceptors.toArray(new HandlerInterceptor[count]) : null);
+        }
+
+        protected final MappedInterceptor[] getMappedInterceptors() {
+            List<MappedInterceptor> mappedInterceptors = new ArrayList<MappedInterceptor>();
+            for (HandlerInterceptor interceptor : this.adaptedInterceptors) {
+                if (interceptor instanceof MappedInterceptor) {
+                    mappedInterceptors.add((MappedInterceptor) interceptor);
+                }
+            }
+            int count = mappedInterceptors.size();
+            return (count > 0 ? mappedInterceptors.toArray(new MappedInterceptor[count]) : null);
+        }
+    总体来看AbstractHandlerMapping提供了抽象方法getHandlerInternal在子类中实现，根据获得的Handler及配置的拦截器Interceptor来生成HandlerExecutionChain。
+
+
+完整的AbstractHandlerMapping源码如下：
+    public abstract class AbstractHandlerMapping extends WebApplicationObjectSupport
+            implements HandlerMapping, Ordered {
+
+        private int order = Integer.MAX_VALUE;  // default: same as non-Ordered
+
+        private Object defaultHandler;
+
+        private UrlPathHelper urlPathHelper = new UrlPathHelper();
+
+        private PathMatcher pathMatcher = new AntPathMatcher();
+
+        private final List<Object> interceptors = new ArrayList<Object>();
+
+        private final List<HandlerInterceptor> adaptedInterceptors = new ArrayList<HandlerInterceptor>();
+
+        private CorsProcessor corsProcessor = new DefaultCorsProcessor();
+
+        private final UrlBasedCorsConfigurationSource corsConfigSource = new UrlBasedCorsConfigurationSource();
+
+        //设置不同HandlerMapping实现类的执行顺序
+        public final void setOrder(int order) {
+          this.order = order;
+        }
+
+        @Override
+        public final int getOrder() {
+          return this.order;
+        }
+
+        public void setDefaultHandler(Object defaultHandler) {
+            this.defaultHandler = defaultHandler;
+        }
+
+        public Object getDefaultHandler() {
+            return this.defaultHandler;
+        }
+
+        public void setAlwaysUseFullPath(boolean alwaysUseFullPath) {
+            this.urlPathHelper.setAlwaysUseFullPath(alwaysUseFullPath);
+            this.corsConfigSource.setAlwaysUseFullPath(alwaysUseFullPath);
+        }
+
+        public void setUrlDecode(boolean urlDecode) {
+            this.urlPathHelper.setUrlDecode(urlDecode);
+            this.corsConfigSource.setUrlDecode(urlDecode);
+        }
+
+        public void setRemoveSemicolonContent(boolean removeSemicolonContent) {
+            this.urlPathHelper.setRemoveSemicolonContent(removeSemicolonContent);
+            this.corsConfigSource.setRemoveSemicolonContent(removeSemicolonContent);
+        }
+
+        public void setUrlPathHelper(UrlPathHelper urlPathHelper) {
+            Assert.notNull(urlPathHelper, "UrlPathHelper must not be null");
+            this.urlPathHelper = urlPathHelper;
+            this.corsConfigSource.setUrlPathHelper(urlPathHelper);
+        }
+
+        public UrlPathHelper getUrlPathHelper() {
+            return urlPathHelper;
+        }
+
+        public void setPathMatcher(PathMatcher pathMatcher) {
+            Assert.notNull(pathMatcher, "PathMatcher must not be null");
+            this.pathMatcher = pathMatcher;
+            this.corsConfigSource.setPathMatcher(pathMatcher);
+        }
+
+        public PathMatcher getPathMatcher() {
+            return this.pathMatcher;
+        }
+
+        public void setInterceptors(Object[] interceptors) {
+            this.interceptors.addAll(Arrays.asList(interceptors));
+        }
+
+        public void setCorsProcessor(CorsProcessor corsProcessor) {
+            Assert.notNull(corsProcessor, "CorsProcessor must not be null");
+            this.corsProcessor = corsProcessor;
+        }
+
+        /**
+         * Return the configured {@link CorsProcessor}.
+         */
+        public CorsProcessor getCorsProcessor() {
+            return this.corsProcessor;
+        }
+
+        public void setCorsConfigurations(Map<String, CorsConfiguration> corsConfigurations) {
+            this.corsConfigSource.setCorsConfigurations(corsConfigurations);
+        }
+
+        /**
+         * Get the CORS configuration.
+         */
+        public Map<String, CorsConfiguration> getCorsConfigurations() {
+            return this.corsConfigSource.getCorsConfigurations();
+        }
+
+        //初始化时调用，初始化一些基本信息，这里主要是初始化一些拦截器
+        @Override
+        protected void initApplicationContext() throws BeansException {
+            extendInterceptors(this.interceptors);//添加或修车intercept，现在并没有具体实现
+            detectMappedInterceptors(this.adaptedInterceptors);//将springMVC容器或者父容器中的所有MappedInterceptor类型的Bean添加到mappedInterceptors属性中
+            initInterceptors();
+        }
+
+        protected void extendInterceptors(List<Object> interceptors) {
+        }
+
+        //将springMVC容器或者父容器中的所有MappedInterceptor类型的Bean添加到mappedInterceptors属性中
+        protected void detectMappedInterceptors(List<HandlerInterceptor> mappedInterceptors) {
+            mappedInterceptors.addAll(
+                    BeanFactoryUtils.beansOfTypeIncludingAncestors(
+                            getApplicationContext(), MappedInterceptor.class, true, false).values());
+        }
+
+        //初始化Interceptor,将interceptors属性里所包含的对象按类型添加到mappedInterceptors或者adaptedInterceptors中。
+        protected void initInterceptors() {
+            if (!this.interceptors.isEmpty()) {
+                for (int i = 0; i < this.interceptors.size(); i++) {
+                    Object interceptor = this.interceptors.get(i);
+                    if (interceptor == null) {
+                        throw new IllegalArgumentException("Entry number " + i + " in interceptors array is null");
+                    }
+                    this.adaptedInterceptors.add(adaptInterceptor(interceptor));
+                }
+            }
+        }
+
+        protected HandlerInterceptor adaptInterceptor(Object interceptor) {
+            if (interceptor instanceof HandlerInterceptor) {
+                return (HandlerInterceptor) interceptor;
+            }
+            else if (interceptor instanceof WebRequestInterceptor) {
+                return new WebRequestHandlerInterceptorAdapter((WebRequestInterceptor) interceptor);
+            }
+            else {
+                throw new IllegalArgumentException("Interceptor type not supported: " + interceptor.getClass().getName());
+            }
+        }
+
+        protected final HandlerInterceptor[] getAdaptedInterceptors() {
+            int count = this.adaptedInterceptors.size();
+            return (count > 0 ? this.adaptedInterceptors.toArray(new HandlerInterceptor[count]) : null);
+        }
+
+        protected final MappedInterceptor[] getMappedInterceptors() {
+            List<MappedInterceptor> mappedInterceptors = new ArrayList<MappedInterceptor>();
+            for (HandlerInterceptor interceptor : this.adaptedInterceptors) {
+                if (interceptor instanceof MappedInterceptor) {
+                    mappedInterceptors.add((MappedInterceptor) interceptor);
+                }
+            }
+            int count = mappedInterceptors.size();
+            return (count > 0 ? mappedInterceptors.toArray(new MappedInterceptor[count]) : null);
+        }
+
+        //获得一个HandlerExecutionChain
+        @Override
+        public final HandlerExecutionChain getHandler(HttpServletRequest request) throws Exception {
+            //从实现类中获得HanlderMethod
+            Object handler = getHandlerInternal(request);
+            if (handler == null) {
+                handler = getDefaultHandler();
+            }
+            if (handler == null) {
+                return null;
+            }
+            // Bean name or resolved handler?
+            if (handler instanceof String) {
+                String handlerName = (String) handler;
+                handler = getApplicationContext().getBean(handlerName);
+            }
+            //获得HandlerExecutionChain
+            HandlerExecutionChain executionChain = getHandlerExecutionChain(handler, request);
+            if (CorsUtils.isCorsRequest(request)) {
+                CorsConfiguration globalConfig = this.corsConfigSource.getCorsConfiguration(request);
+                CorsConfiguration handlerConfig = getCorsConfiguration(handler, request);
+                CorsConfiguration config = (globalConfig != null ? globalConfig.combine(handlerConfig) : handlerConfig);
+                executionChain = getCorsHandlerExecutionChain(request, executionChain, config);
+            }
+            return executionChain;
+        }
+
+        //模板方法，用于子类中实现，通过request去查找对应的执行方法HandlerMethod
+        protected abstract Object getHandlerInternal(HttpServletRequest request) throws Exception;
+
+        //
+        protected HandlerExecutionChain getHandlerExecutionChain(Object handler, HttpServletRequest request) {
+            //如果没有获得则创建一个
+            HandlerExecutionChain chain = (handler instanceof HandlerExecutionChain ?
+                    (HandlerExecutionChain) handler : new HandlerExecutionChain(handler));
+            //获得IP地址及端口后的URL地址
+            String lookupPath = this.urlPathHelper.getLookupPathForRequest(request);
+            //在HandlerExecutionChain中添加拦截器
+            for (HandlerInterceptor interceptor : this.adaptedInterceptors) {
+                if (interceptor instanceof MappedInterceptor) {
+                    MappedInterceptor mappedInterceptor = (MappedInterceptor) interceptor;
+                    //根据lookupPath来获取Interceptor
+                    if (mappedInterceptor.matches(lookupPath, this.pathMatcher)) {
+                        chain.addInterceptor(mappedInterceptor.getInterceptor());
+                    }
+                }
+                else {
+                    chain.addInterceptor(interceptor);
+                }
+            }
+            return chain;
+        }
+
+        protected CorsConfiguration getCorsConfiguration(Object handler, HttpServletRequest request) {
+            if (handler instanceof HandlerExecutionChain) {
+                handler = ((HandlerExecutionChain) handler).getHandler();
+            }
+            if (handler instanceof CorsConfigurationSource) {
+                return ((CorsConfigurationSource) handler).getCorsConfiguration(request);
+            }
+            return null;
+        }
+        protected HandlerExecutionChain getCorsHandlerExecutionChain(HttpServletRequest request,
+                HandlerExecutionChain chain, CorsConfiguration config) {
+            if (CorsUtils.isPreFlightRequest(request)) {
+                HandlerInterceptor[] interceptors = chain.getInterceptors();
+                chain = new HandlerExecutionChain(new PreFlightHandler(config), interceptors);
+            }
+            else {
+                chain.addInterceptor(new CorsInterceptor(config));
+            }
+            return chain;
+        }
+
+
+        private class PreFlightHandler implements HttpRequestHandler {
+            private final CorsConfiguration config;
+            public PreFlightHandler(CorsConfiguration config) {
+                this.config = config;
+            }
+            @Override
+            public void handleRequest(HttpServletRequest request, HttpServletResponse response)
+                    throws IOException {
+                corsProcessor.processRequest(this.config, request, response);
+            }
+        }
+
+        private class CorsInterceptor extends HandlerInterceptorAdapter {
+
+            private final CorsConfiguration config;
+            public CorsInterceptor(CorsConfiguration config) {
+                this.config = config;
+            }
+            @Override
+            public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
+                    Object handler) throws Exception {
+                return corsProcessor.processRequest(this.config, request, response);
+            }
+        }
+
+    }
