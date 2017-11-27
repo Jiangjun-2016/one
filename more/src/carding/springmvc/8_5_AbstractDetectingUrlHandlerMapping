@@ -1,0 +1,118 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerMapping
+        AbstractHandlerMapping
+            AbstracctHandlerMethodMapping
+                RequestMappingInfoHandler
+                    RequestMapppingHandler
+            AbstarctUrlHandlerMapping
+                AbstractDetectingUrlHandlerMapping
+                    AbtractControllerUrlHandlerMapping
+                        ControllerBeanNameHanndlerMapping
+                        ControllerClassNameHandlerMapping
+                    BeanNameUrlHandlerMapping
+                    DefaultAnnotationHandlerMapping
+                SimpleUrlHandlerMapping
+
+1.  在上一博客中我们介绍了handlerMap有一个注册url和Handler关系的注册函数，这个函数的调用是在实现类AbstractDetectingUrlHandlerMapping中实现的，
+    目的是springMVC容器启动时将url和handler的对应关系注册到handlerMap中。
+
+2.  AbstractDetectingUrlHandlerMapping 抽象类：通过重写initApplicationContext来注册Handler，
+    调用detectHandlers方法会根据配置的detectHand-lersInAcestorContexts参数从springMVC容器
+    或者springMVC集群父容器中找到所有bean的beanName，然后调用determineUrlsForHandler方法对每个
+    beanName解析出对应的urls，如果解析的结果不为空，则将解析出的urls和beanName注册到父类的map中。
+        //初始化容器
+        @Override
+        public void initApplicationContext() throws ApplicationContextException {
+            super.initApplicationContext();
+            detectHandlers();
+        }
+
+    在调用父类的super.initApplicationContext后就是注册每个bean和url的关系，调用detectHandlers
+        //注册每个bean对应的url的关系
+        protected void detectHandlers() throws BeansException {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Looking for URL mappings in application context: " + getApplicationContext());
+            }
+            //获取容器的所有bean的名字
+            String[] beanNames = (this.detectHandlersInAncestorContexts ?
+                    BeanFactoryUtils.beanNamesForTypeIncludingAncestors(getApplicationContext(), Object.class) :
+                    getApplicationContext().getBeanNamesForType(Object.class));
+
+            // Take any bean name that we can determine URLs for.
+            //对每个beanName解析url，如果能解析到就注册到父类的map中
+            for (String beanName : beanNames) {
+                //子类具体去实现
+                String[] urls = determineUrlsForHandler(beanName);
+                if (!ObjectUtils.isEmpty(urls)) {
+                    // URL paths found: Let's consider it a handler.
+                    //将解析的url注册到父类
+                    registerHandler(urls, beanName);
+                }
+                else {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Rejected bean name '" + beanName + "': no URL paths identified");
+                    }
+                }
+            }
+        }
+
+    其中determineUrlsForHandler函数是在其子类中实现的，registerHandler函数操作是在父类AbstractUrlHandlerMapping中实现的，将bean和url的关系注册到handlerMap中。
+    AbstractDetectingUrlHandlerMapping的完整源码如下：
+
+    public abstract class AbstractDetectingUrlHandlerMapping extends AbstractUrlHandlerMapping {
+
+        private boolean detectHandlersInAncestorContexts = false;
+
+        public void setDetectHandlersInAncestorContexts(boolean detectHandlersInAncestorContexts) {
+            this.detectHandlersInAncestorContexts = detectHandlersInAncestorContexts;
+        }
+
+        //初始化容器
+        @Override
+        public void initApplicationContext() throws ApplicationContextException {
+            super.initApplicationContext();
+            detectHandlers();
+        }
+
+        //注册每个bean对应的url的关系
+        protected void detectHandlers() throws BeansException {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Looking for URL mappings in application context: " + getApplicationContext());
+            }
+            //获取容器的所有bean的名字
+            String[] beanNames = (this.detectHandlersInAncestorContexts ?
+                    BeanFactoryUtils.beanNamesForTypeIncludingAncestors(getApplicationContext(), Object.class) :
+                    getApplicationContext().getBeanNamesForType(Object.class));
+
+            // Take any bean name that we can determine URLs for.
+            //对每个beanName解析url，如果能解析到就注册到父类的map中
+            for (String beanName : beanNames) {
+                //子类具体去实现
+                String[] urls = determineUrlsForHandler(beanName);
+                if (!ObjectUtils.isEmpty(urls)) {
+                    // URL paths found: Let's consider it a handler.
+                    //将解析的url注册到父类
+                    registerHandler(urls, beanName);
+                }
+                else {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Rejected bean name '" + beanName + "': no URL paths identified");
+                    }
+                }
+            }
+        }
+        //抽象方法，子类中实现
+        protected abstract String[] determineUrlsForHandler(String beanName);
+
+    }
+
+
+
+
+
+
+
