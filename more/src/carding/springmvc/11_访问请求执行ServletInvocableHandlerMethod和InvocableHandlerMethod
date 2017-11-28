@@ -1,0 +1,108 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+
+0.  在之前一篇博客中 springMVC源码分析--RequestMappingHandlerAdapter（五）我们已经简单的介绍到具体请求访问的执行某个Controller中的方法
+    是在RequestMappingHandlerAdapter的invokeHandlerMethod方法中，
+    其实具体执行的地方是invocableMethod.invokeAndHandle(webRequest, mavContainer);，
+    接下来我们看看详细的执行过程。
+
+1.  首先是根据HandlerMethod创建ServletInvocableHandlerMethod，
+    接下来就是调用ServletInvocableHandlerMethod的invokeAndHandle方法，
+    其实最终是通过反射机制调用Controller中的方法。
+        protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+                HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+            ........
+            //创建invocableMethod
+            ServletInvocableHandlerMethod invocableMethod = createInvocableHandlerMethod(handlerMethod);
+            ........
+            //执行ServletInvocableHandlerMethod的invokeAndHandle方法
+            invocableMethod.invokeAndHandle(webRequest, mavContainer);
+            if (asyncManager.isConcurrentHandlingStarted()) {
+                return null;
+            }
+
+            return getModelAndView(mavContainer, modelFactory, webRequest);
+        }
+    ServletInvocableHandlerMethod中invokeAndHandle方法的调用如下，其实会调用invokeForRequest方法，并获得返回值returnValue.
+        public void invokeAndHandle(ServletWebRequest webRequest,
+                ModelAndViewContainer mavContainer, Object... providedArgs) throws Exception {
+            //执行请求对应的方法，并获得返回执行
+            Object returnValue = invokeForRequest(webRequest, mavContainer, providedArgs);
+            setResponseStatus(webRequest);
+
+            if (returnValue == null) {
+                if (isRequestNotModified(webRequest) || hasResponseStatus() || mavContainer.isRequestHandled()) {
+                    mavContainer.setRequestHandled(true);
+                    return;
+                }
+            }
+            else if (StringUtils.hasText(this.responseReason)) {
+                mavContainer.setRequestHandled(true);
+                return;
+            }
+
+            mavContainer.setRequestHandled(false);
+            try {
+                this.returnValueHandlers.handleReturnValue(
+                        returnValue, getReturnValueType(returnValue), mavContainer, webRequest);
+            }
+            catch (Exception ex) {
+                if (logger.isTraceEnabled()) {
+                    logger.trace(getReturnValueHandlingErrorMessage("Error handling return value", returnValue), ex);
+                }
+                throw ex;
+            }
+        }
+
+    invokeForRequest中的操作也是比较简单的，首先获取request中的参数，然后调用doInvoke(args)方法。
+        public Object invokeForRequest(NativeWebRequest request, ModelAndViewContainer mavContainer,
+                Object... providedArgs) throws Exception {
+            //首先会获取请求的参数，其实就是Controller方法中的参数
+            Object[] args = getMethodArgumentValues(request, mavContainer, providedArgs);
+            if (logger.isTraceEnabled()) {
+                StringBuilder sb = new StringBuilder("Invoking [");
+                sb.append(getBeanType().getSimpleName()).append(".");
+                sb.append(getMethod().getName()).append("] method with arguments ");
+                sb.append(Arrays.asList(args));
+                logger.trace(sb.toString());
+            }
+            //调用Controller中的方法
+            Object returnValue = doInvoke(args);
+            if (logger.isTraceEnabled()) {
+                logger.trace("Method [" + getMethod().getName() + "] returned [" + returnValue + "]");
+            }
+            return returnValue;
+        }
+    doInvoke方法是在InvocableHandlerMethod类中，最重要的是调用getBridgedMethod().invoke(getBean(),args)，通过反射机制完成对Controller中的函数的调用。
+        protected Object doInvoke(Object... args) throws Exception {
+            ReflectionUtils.makeAccessible(getBridgedMethod());
+            try {
+                return getBridgedMethod().invoke(getBean(), args);
+            }
+            catch (IllegalArgumentException ex) {
+                assertTargetBean(getBridgedMethod(), getBean(), args);
+                throw new IllegalStateException(getInvocationErrorMessage(ex.getMessage(), args), ex);
+            }
+            catch (InvocationTargetException ex) {
+                // Unwrap for HandlerExceptionResolvers ...
+                Throwable targetException = ex.getTargetException();
+                if (targetException instanceof RuntimeException) {
+                    throw (RuntimeException) targetException;
+                }
+                else if (targetException instanceof Error) {
+                    throw (Error) targetException;
+                }
+                else if (targetException instanceof Exception) {
+                    throw (Exception) targetException;
+                }
+                else {
+                    String msg = getInvocationErrorMessage("Failed to invoke controller method", args);
+                    throw new IllegalStateException(msg, targetException);
+                }
+            }
+        }
+
+    此外ServletInvocableHandlerMethod和InvocableHandlerMethod是HandlerMethod的子类，可以参考springMVC源码分析--HandlerMethod中有关HandlerMethod的知识。
+
