@@ -1,0 +1,153 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.  这一篇博客我们简单的介绍一下ModelAttribute的使用和运行原理。
+
+1.  首先@ModelAttribute是使用在方法或者参数上的，
+    当使用在方法上时其作用于本身所在的Controller，在访问Controller中的所有请求时都会执行到@ModelAttribute所注解的方法。
+    @Controller
+    public class ModelAttributeController {
+
+        @ModelAttribute
+        public void init(Model model){
+            model.addAttribute("test", "测试信息");
+        }
+
+        @RequestMapping("/modelAttribute")
+        public String modelAttribute(Model model){
+            model.addAttribute("test1", "测试信息1");
+            return "modelAttribute";
+        }
+    }
+    当访问连接http://localhost/modelAttribute时会在页面中看到test和test1的值。
+    测试信息
+    测试信息1
+
+2.  @ModelAttribute也是可以作用于参数上的，我们在上面的代码中再添加一个作用于参数的参数。
+    @Controller
+    public class ModelAttributeController {
+
+        @ModelAttribute
+        public void init(Model model){
+            model.addAttribute("test", "测试信息");
+        }
+
+        @RequestMapping("/modelAttribute")
+        public String modelAttribute(Model model,@ModelAttribute("test3")String test3){
+            model.addAttribute("test1", "测试信息1");
+            model.addAttribute("test3", test3);
+            return "modelAttribute";
+        }
+
+    }
+    当访问如下链接时就可以获得如下信息了。
+    http://localhost/modelAttribute?test3=测试信息3
+    测试信息
+    测试信息1
+    测试信息3
+
+3.  @ModelAttribute注释返回具体类，如下：
+    @Controller
+    public class Hello2ModelController {
+
+        @ModelAttribute
+        public User populateModel() {
+           User user=new User();
+           user.setAccount("ray");
+           return user;
+        }
+
+        @RequestMapping(value = "/helloWorld2")
+        public String helloWorld(User user) {
+            user.setName("老王");
+           return "helloWorld.jsp";
+        }
+    }
+    也可以指定属性名称
+    @Controller
+    public class Hello2ModelController {
+
+        @ModelAttribute(value="myUser")
+        public User populateModel() {
+           User user=new User();
+           user.setAccount("ray");
+           return user;
+        }
+        @RequestMapping(value = "/helloWorld2")
+        public String helloWorld(Model map) {
+           return "helloWorld.jsp";
+        }
+    }
+
+4.  总结：
+    @ModelAttribute一个具有如下三个作用：
+    ①绑定请求参数到命令对象：放在功能处理方法的入参上时，用于将多个请求参数绑定到一个命令对象，从而简化绑
+    定流程，而且自动暴露为模型数据用于视图页面展示时使用；
+    ②暴露表单引用对象为模型数据：放在处理器的一般方法（非功能处理方法）上时，是为表单准备要展示的表单引用
+    对象，如注册时需要选择的所在城市等，而且在执行功能处理方法（@RequestMapping 注解的方法）之前，自动添加
+    到模型对象中，用于视图页面展示时使用；
+    ③暴露@RequestMapping 方法返回值为模型数据：放在功能处理方法的返回值上时，是暴露功能处理方法的返回值为
+    模型数据，用于视图页面展示时使用。
+
+5.  为什么@ModelAttribute注解的方法是作用于整个Controller的，实际上是在执行Controller的每个请求时都会执行@ModelAttribute注解的方法。
+    执行过程在RequestMappingHandlerAdapter中，每次执行Controller时会执行@ModelAttribute注解的方法
+        protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+                HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+
+            ......
+            //执行@ModelAttribute注解的方法
+            modelFactory.initModel(webRequest, mavContainer, invocableMethod);
+
+            ......
+            //执行Controller中的方法
+            invocableMethod.invokeAndHandle(webRequest, mavContainer);
+            ......
+
+        }
+    initModel中会执行@ModelAttribute注解的方法
+        public void initModel(NativeWebRequest request, ModelAndViewContainer mavContainer, HandlerMethod handlerMethod)
+                throws Exception {
+
+            Map<String, ?> sessionAttributes = this.sessionAttributesHandler.retrieveAttributes(request);
+            mavContainer.mergeAttributes(sessionAttributes);
+            //执行@ModelAttribute注解的方法
+            invokeModelAttributeMethods(request, mavContainer);
+
+            //方法执行结果的值放到mavContainer
+            for (String name : findSessionAttributeArguments(handlerMethod)) {
+                if (!mavContainer.containsAttribute(name)) {
+                    Object value = this.sessionAttributesHandler.retrieveAttribute(request, name);
+                    if (value == null) {
+                        throw new HttpSessionRequiredException("Expected session attribute '" + name + "'");
+                    }
+                    mavContainer.addAttribute(name, value);
+                }
+            }
+        }
+    在invokeModelAttributeMethods中会判断方法上是否被@ModelAttribute注解，如果是则会执行这个方法，并将返回值放到mavContainer中
+        private void invokeModelAttributeMethods(NativeWebRequest request, ModelAndViewContainer mavContainer)
+                throws Exception {
+
+            while (!this.modelMethods.isEmpty()) {
+                InvocableHandlerMethod attrMethod = getNextModelMethod(mavContainer).getHandlerMethod();
+                //判断方法是否被@ModelAttribute注解
+                String modelName = attrMethod.getMethodAnnotation(ModelAttribute.class).value();
+                if (mavContainer.containsAttribute(modelName)) {
+                    continue;
+                }
+                //执行被@ModelAttribute注解的方法
+                Object returnValue = attrMethod.invokeForRequest(request, mavContainer);
+                //返回值放到mavContainer
+                if (!attrMethod.isVoid()){
+                    String returnValueName = getNameForReturnValue(returnValue, attrMethod.getReturnType());
+                    if (!mavContainer.containsAttribute(returnValueName)) {
+                        mavContainer.addAttribute(returnValueName, returnValue);
+                    }
+                }
+            }
+        }
+
+    总结：这边博客简单地介绍了一下@ModelAttribute的用法，
+    当其注解方法时，这个方法在每次访问Controller时都会被执行，其执行到的原理就是在每次执行Controller时都会判断一次，并执行@ModelAttribute的方法，
+    将执行后的结果值放到mavContainer中，现在看来其实现机制也还是比较容易理解的。
