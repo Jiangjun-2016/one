@@ -1,0 +1,54 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerAdapter
+        AbstractHandlerMethodAdapter
+            RequestMapppingHandlerAdapter
+        AnnotationMethodHandlerAdapter
+        HttpRequestHandlerAdapter
+        SimpleControllerHandlerAdapter
+        SimpleServletHandlerAdapter
+
+1.  上一篇博客springMVC源码分析--HandlerAdapter（一）中我们主要介绍了一下HandlerAdapter接口相关的内容，实现类及其在DispatcherServlet中执行的顺序，
+    接下来我们详细介绍一下其实现类SimpleControllerHandlerAdapter，
+    SimpleControllerHandlerAdapter是Controller实现类的适配器类，其本质是执行Controller中的handleRequest方法。
+
+2.  supports方法就是判断handler是否是Servlet
+    getLastModified直接返回-1
+    handle方法本质是执行Controller.handleRequest方法。
+        public class SimpleControllerHandlerAdapter implements HandlerAdapter {
+
+            @Override
+            public boolean supports(Object handler) {
+                //判断是否是Controller类
+                return (handler instanceof Controller);
+            }
+            //执行Controller的handleRequest方法
+            @Override
+            public ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler)
+                    throws Exception {
+                //本质是执行Controller的handleRequest方法
+                return ((Controller) handler).handleRequest(request, response);
+            }
+
+            @Override
+            public long getLastModified(HttpServletRequest request, Object handler) {
+                if (handler instanceof LastModified) {
+                    return ((LastModified) handler).getLastModified(request);
+                }
+                return -1L;
+            }
+
+        }
+
+3.  其实Controller接口的定义也很简单，仅仅定义了一个handleRequest方法
+    public interface Controller {
+
+        ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception;
+
+    }
+
+    SimpleControllerHandlerAdapter的实现也是很简单的，就是适配执行Controller的handleRequest方法。
+
