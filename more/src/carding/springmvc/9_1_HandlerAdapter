@@ -1,0 +1,72 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerAdapter
+        AbstractHandlerMethodAdapter
+            RequestMapppingHandlerAdapter
+        AnnotationMethodHandlerAdapter
+        HttpRequestHandlerAdapter
+        SimpleControllerHandlerAdapter
+        SimpleServletHandlerAdapter
+
+1.  HandlerAdapter的功能实际就是执行我们的具体的Controller、Servlet或者HttpRequestHandler中的方法。
+
+2.  1、SimpleServletHandlerAdapter实际就是执行HttpServlet的service方法 springMVC源码分析--SimpleServletHandlerAdapter（二）
+    2、SimpleControllerHandlerAdapter实际就是执行Controller的handleRequest方法  springMVC源码分析--SimpleControllerHandlerAdapter（三）
+    3、HttpRequestHandlerAdapter实际就是执行HttpRequestHandler的handleRequest方法 springMVC源码分析--HttpRequestHandlerAdapter（四）
+    4、RequestMappingHandlerAdapter实际就是执行@RequestMapping注解的方法。
+    5、AnnotationMethodHandlerAdapter已结被废弃，就不做过多介绍
+
+3.  HandlerAdapter的接口中定义了三个方法：
+    （1）boolean supports(Object handler); 判断是否支持传入的Handler
+    （2）ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler)  用来使用Handler处理请求
+    （3）long getLastModified(HttpServletRequest request, Object handler); 用来获取资料的Last-Modified值。
+
+4.  接口源码如下：
+    public interface HandlerAdapter {
+        boolean supports(Object handler);
+        ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception;
+        long getLastModified(HttpServletRequest request, Object handler);
+    }
+
+5.  HandlerAdapter的执行操作，其执行过程在DispatcherServlet的doDispatch中，执行流程如下：
+        protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
+
+            ........
+
+            try {
+
+                try {
+
+                    //获取合适的HandlerAdapter实现类
+                    HandlerAdapter ha = getHandlerAdapter(mappedHandler.getHandler());
+
+                ........
+
+                    if (isGet || "HEAD".equals(method)) {
+                        long lastModified = ha.getLastModified(request, mappedHandler.getHandler());
+
+                    }
+                ........
+                    //执行真正的请求操作
+                    mv = ha.handle(processedRequest, response, mappedHandler.getHandler());
+
+            ........
+        }
+
+    getHandlerAdapter的操作就是选择合适的HandlerAdapter来执行，设计模式中的适配器模式，handlerAdapters中的内容就是所有的HandlerAdapter的实现类。
+        protected HandlerAdapter getHandlerAdapter(Object handler) throws ServletException {
+            for (HandlerAdapter ha : this.handlerAdapters) {
+                if (logger.isTraceEnabled()) {
+                    logger.trace("Testing handler adapter [" + ha + "]");
+                }
+                if (ha.supports(handler)) {
+                    return ha;
+                }
+            }
+            throw new ServletException("No adapter for handler [" + handler +
+                    "]: The DispatcherServlet configuration needs to include a HandlerAdapter that supports this handler");
+        }
+    这样就完成了Handler的真正调用过程，最终调用过程是返回一个ModelAndView对象。接下来我们会用几篇博客分别介绍一下HandlerAdapter的实现类完成的操作。
