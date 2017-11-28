@@ -5,5 +5,6 @@
 </head>
 <body>
 <h1>Hello</h1>
+<img src="images/webupload/icons.png">
 </body>
 </html>
