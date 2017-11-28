@@ -1,0 +1,91 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerAdapter
+        AbstractHandlerMethodAdapter
+            RequestMapppingHandlerAdapter
+        AnnotationMethodHandlerAdapter
+        HttpRequestHandlerAdapter
+        SimpleControllerHandlerAdapter
+        SimpleServletHandlerAdapter
+
+1.  上一篇博客springMVC源码分析--HandlerAdapter（一）中我们主要介绍了一下HandlerAdapter接口相关的内容，实现类及其在DispatcherServlet中执行的顺序，
+    接下来我们详细介绍一下其实现类AbstractHandlerMethodAdapter和RequestMappingHandlerAdapter，
+    其中AbstractHandlerMethodAdapter是抽象类，AbstractHandlerMethodAdapter只是简单实现了HandlerAdapter中定义的接口
+    （其实最终还是在RequesrMappingHandlerAdapter中对代码进行实现的）。
+    并且AbstractHandlerMethodAdapter中增加了执行顺序Oder.
+
+2.  AbstractHandlerMethod的源码如下：
+        public abstract class AbstractHandlerMethodAdapter extends WebContentGenerator implements HandlerAdapter, Ordered {
+
+            private int order = Ordered.LOWEST_PRECEDENCE;
+            public AbstractHandlerMethodAdapter() {
+                // no restriction of HTTP methods by default
+                super(false);
+            }
+            public void setOrder(int order) {
+                this.order = order;
+            }
+            @Override
+            public int getOrder() {
+                return this.order;
+            }
+            @Override
+            public final boolean supports(Object handler) {
+                return (handler instanceof HandlerMethod && supportsInternal((HandlerMethod) handler));
+            }
+            protected abstract boolean supportsInternal(HandlerMethod handlerMethod);
+            @Override
+            public final ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler)
+                    throws Exception {
+
+                return handleInternal(request, response, (HandlerMethod) handler);
+            }
+            //handleInternal主要做如下操作:(1)备好处理器所需要的参数(2)使用处理器处理请求(3)处理返回值，也就是将不同类型的返回值统一处理成ModelAndView类型
+            protected abstract ModelAndView handleInternal(HttpServletRequest request,
+                    HttpServletResponse response, HandlerMethod handlerMethod) throws Exception;
+
+            @Override
+            public final long getLastModified(HttpServletRequest request, Object handler) {
+                return getLastModifiedInternal(request, (HandlerMethod) handler);
+            }
+
+            protected abstract long getLastModifiedInternal(HttpServletRequest request, HandlerMethod handlerMethod);
+
+        }
+
+3.  从上面代码中我们可以看到handleInternal和getLastModifiedInternal是抽象方法，具体实现是在子类RequestMappingHandlerAdapter中。
+    RequestMappingHandlerAdapter中getLastModifiedInternal的实现如下，直接返回值-1
+        @Override
+        protected long getLastModifiedInternal(HttpServletRequest request, HandlerMethod handlerMethod) {
+            return -1;
+        }
+
+4.  handleInternal的实现如下，因为中间涉及到很多参数等等操作的处理，这里我们就不做过多介绍了。
+        @Override
+        protected ModelAndView handleInternal(HttpServletRequest request,
+                HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+            ............
+            //handlerMethod既是我们要执行的Controller中的具体的方法
+            return invokeHandlerMethod(request, response, handlerMethod);
+        }
+
+    最终操作是在invokeHandlerMothod中，执行结果返回ModelAndView值。
+        protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+                HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+
+            .........
+
+            //执行Controller中的RequestMapping注释的方法
+            invocableMethod.invokeAndHandle(webRequest, mavContainer);
+            if (asyncManager.isConcurrentHandlingStarted()) {
+                return null;
+            }
+            //返回ModelAndView视图
+            return getModelAndView(mavContainer, modelFactory, webRequest);
+        }
+
+    其实简单来说就是采用反射机制调用url请求对应的Controller中的方法（这其中还包括参数处理等等操作没有介绍），
+    返回执行结果值，这样就完成了HandlerAdapter的使命。
