@@ -1,0 +1,49 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+
+0.
+    HandLerAdapter
+        AbstractHandlerMethodAdapter
+            RequestMapppingHandlerAdapter
+        AnnotationMethodHandlerAdapter
+        HttpRequestHandlerAdapter
+        SimpleControllerHandlerAdapter
+        SimpleServletHandlerAdapter
+
+1.  上一篇博客springMVC源码分析--HandlerAdapter（一）中我们主要介绍了一下HandlerAdapter接口相关的内容，实现类及其在DispatcherServlet中执行的顺序，
+    接下来我们详细介绍一下其实现类SimpleServletHandlerAdapter，
+    SimpleServletHandlerAdapter其实是一个Servlet的适配器，其最终执行的方法是Servlet的service方法.
+
+2.  源码如下，我们可以看到其真正起作用的地方是
+    ((Servlet) handler).service(request, response)，
+    其实也就是调用Servlet的service，其实本质还是比较简单的。
+    supports方法就是判断handler是否是Servlet
+    getLastModified直接返回-1
+    handle方法本质是执行Servlet.service方法。
+
+        public class SimpleServletHandlerAdapter implements HandlerAdapter {
+
+        @Override
+        public boolean supports(Object handler) {
+            return (handler instanceof Servlet);
+        }
+
+        //执行Servlet的service方法
+        @Override
+        public ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler)
+                throws Exception {
+            //本质还是执行Servlet的service方法
+            ((Servlet) handler).service(request, response);
+            return null;
+        }
+
+        @Override
+        public long getLastModified(HttpServletRequest request, Object handler) {
+            return -1;
+        }
+
+    }
+
+    这样springMVC中就提供了执行Servlet的适配器，如果可以的话我们是否也可以自己写一个适配器类然后注入到springMVC 的容器中。
+
