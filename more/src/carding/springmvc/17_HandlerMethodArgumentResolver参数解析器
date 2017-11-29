@@ -1,0 +1,83 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+
+0.  HandlerMethodArgumentResolver是用来为处理器解析参数的，主要用在HandlerMethod中，每个Resolver对应一种类型的参数，其实现类特别的多。
+    HandlerMethodArgumentResolver的接口定义如下：
+    （1）supportsParameter 用于判断是否支持对某种参数的解析
+    （2）resolveArgument  将请求中的参数值解析为某种对象
+    public interface HandlerMethodArgumentResolver {
+
+        //判断是否支持某种类型的函数参数
+        boolean supportsParameter(MethodParameter parameter);
+
+        //解析请求中的参数为某个函数的参数对象
+        Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
+                NativeWebRequest webRequest, WebDataBinderFactory binderFactory) throws Exception;
+
+    }
+
+1.  HandlerMethodArgumentResolver的执行流程：
+    参数的处理是在InvocableHandlerMethod中，当执行具体的请求处理时执行invokeForRequest函数
+        public Object invokeForRequest(NativeWebRequest request, ModelAndViewContainer mavContainer,
+                Object... providedArgs) throws Exception {
+            //获取执行Controller的函数的参数对象
+            Object[] args = getMethodArgumentValues(request, mavContainer, providedArgs);
+            ......
+        }
+    具体的参数解析器的选择和使用参数解析器去解析参数的实现都在getMethodArgumentValues中，
+    首先springMVC在启动时会将所有的参数解析器放到HandlerMethodArgumentResolverComposite，
+    HandlerMethodArgumentResolverComposite是所有参数解析器的一个集合，
+    接下来就是从HandlerMethodArgumentResolverComposite参数解析器集合中选择一个支持对parameter解析的参数解析器，
+    接下来就使用支持参数解析的解析器进行参数解析。
+        private Object[] getMethodArgumentValues(NativeWebRequest request, ModelAndViewContainer mavContainer,
+                Object... providedArgs) throws Exception {
+            //获取执行的具体函数的参数
+            MethodParameter[] parameters = getMethodParameters();
+            Object[] args = new Object[parameters.length];
+            for (int i = 0; i < parameters.length; i++) {
+                MethodParameter parameter = parameters[i];
+                parameter.initParameterNameDiscovery(this.parameterNameDiscoverer);
+                GenericTypeResolver.resolveParameterType(parameter, getBean().getClass());
+                //获取参数值对象
+                args[i] = resolveProvidedArgument(parameter, providedArgs);
+                if (args[i] != null) {
+                    continue;
+                }
+                //首先判断是否有参数解析器支持参数parameter，采用职责链的设计模式
+                if (this.argumentResolvers.supportsParameter(parameter)) {
+                    try {
+                        //如果参数解析器支持解析参数parameter，那么解析参数成Controller的函数需要的格式
+                        args[i] = this.argumentResolvers.resolveArgument(
+                                parameter, mavContainer, request, this.dataBinderFactory);
+                        continue;
+                    }
+                    catch (Exception ex) {
+                        if (logger.isDebugEnabled()) {
+                            logger.debug(getArgumentResolutionErrorMessage("Error resolving argument", i), ex);
+                        }
+                        throw ex;
+                    }
+                }
+                if (args[i] == null) {
+                    String msg = getArgumentResolutionErrorMessage("No suitable resolver for argument", i);
+                    throw new IllegalStateException(msg);
+                }
+            }
+            //返回参数值
+            return args;
+        }
+    以上代码会将我们通过链接提交的参数值转换为对象值。
+
+
+
