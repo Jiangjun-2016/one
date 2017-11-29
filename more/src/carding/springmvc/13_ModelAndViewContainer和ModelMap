@@ -1,0 +1,225 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+
+0.  ModelAndViewContainer主要是用来返回Model对象的，在ModelAndViewContainer中有defaultModel和redirectModel，
+    defaultModel是默认使用的Model，后者用于传递redirect时的参数，
+    我们在处理中使用了Model或ModelMap时，ArgumentResolver会传入defaultModel，它是BindingAwareModelMap类型，既继承了ModelMap又实现了Model接口，
+    所以在处理器中使用Model或者ModelMap其实使用的是同一个对象，Map参数传入的也是这个对象。
+    处理器中RedirectAttributes类型的参数ArgumentResolver会传入redirectModel，它实际上是RedirectAttributeModelMap类型。
+
+    ModelAndViewContainer中其实就是一个ModelMap，一系列的操作都是基于ModelMap的。
+    public class ModelAndViewContainer {
+
+        private boolean ignoreDefaultModelOnRedirect = false;
+
+        //视图，可以是实际视图也可以是String类型的逻辑视图
+        private Object view;
+
+        //默认使用的Model
+        private final ModelMap defaultModel = new BindingAwareModelMap();
+
+        //redirect类型的Model
+        private ModelMap redirectModel;
+
+        private boolean redirectModelScenario = false;
+
+        //用于设置SessionAttribute使用完的标志
+        private final SessionStatus sessionStatus = new SimpleSessionStatus();
+
+        //请求是否已经处理完成的标志
+        private boolean requestHandled = false;
+
+
+
+        public void setIgnoreDefaultModelOnRedirect(boolean ignoreDefaultModelOnRedirect) {
+            this.ignoreDefaultModelOnRedirect = ignoreDefaultModelOnRedirect;
+        }
+
+        //设置视图名称
+        public void setViewName(String viewName) {
+            this.view = viewName;
+        }
+
+
+        public String getViewName() {
+            return (this.view instanceof String ? (String) this.view : null);
+        }
+
+
+        public void setView(Object view) {
+            this.view = view;
+        }
+
+        public Object getView() {
+            return this.view;
+        }
+
+        public boolean isViewReference() {
+            return (this.view instanceof String);
+        }
+
+
+        public ModelMap getModel() {
+            if (useDefaultModel()) {
+                return this.defaultModel;
+            }
+            else {
+                return (this.redirectModel != null) ? this.redirectModel : new ModelMap();
+            }
+        }
+
+        //和model相关的处理方法
+         /*
+           * 假设redirectModelScenario = R ，ignoreDefaultModelOnRedirect = I ，（redirectModel == null）= M
+           * 那么（R, I, M）共有8中组合情况，useDefaultModel返回false（也就是使用redirectModel）只有三种情况：
+           * （1,1,0）、（1,1,1）、(1,0,0)
+           * a：如果同时设置了redirectModelScenario和ignoreDefaultModelOnRedirect为true，那么无论redirectModel
+           *    是否为null，都会使用redirectModel；
+           * b：如果设置了redirectModelScenario为true，而ignoreDefaultModelOnRedirect为false，同时redirectModel
+           *    为null，那么也会使用redirectModel；
+        */
+        private boolean useDefaultModel() {
+            return (!this.redirectModelScenario || (this.redirectModel == null && !this.ignoreDefaultModelOnRedirect));
+        }
+
+        public ModelMap getDefaultModel() {
+            return this.defaultModel;
+        }
+
+        public void setRedirectModel(ModelMap redirectModel) {
+            this.redirectModel = redirectModel;
+        }
+
+        public void setRedirectModelScenario(boolean redirectModelScenario) {
+            this.redirectModelScenario = redirectModelScenario;
+        }
+
+        public SessionStatus getSessionStatus() {
+            return this.sessionStatus;
+        }
+
+
+        public void setRequestHandled(boolean requestHandled) {
+            this.requestHandled = requestHandled;
+        }
+
+
+        public boolean isRequestHandled() {
+            return this.requestHandled;
+        }
+
+        public ModelAndViewContainer addAttribute(String name, Object value) {
+            getModel().addAttribute(name, value);
+            return this;
+        }
+
+
+        public ModelAndViewContainer addAttribute(Object value) {
+            getModel().addAttribute(value);
+            return this;
+        }
+
+        public ModelAndViewContainer addAllAttributes(Map<String, ?> attributes) {
+            getModel().addAllAttributes(attributes);
+            return this;
+        }
+
+        public ModelAndViewContainer mergeAttributes(Map<String, ?> attributes) {
+            getModel().mergeAttributes(attributes);
+            return this;
+        }
+
+        public ModelAndViewContainer removeAttributes(Map<String, ?> attributes) {
+            if (attributes != null) {
+                for (String key : attributes.keySet()) {
+                    getModel().remove(key);
+                }
+            }
+            return this;
+        }
+
+
+        public boolean containsAttribute(String name) {
+            return getModel().containsAttribute(name);
+        }
+
+    }
+
+    ModelMap其实就是一个HashMap而已，主要用于数据的存取而已。
+    @SuppressWarnings("serial")
+    public class ModelMap extends LinkedHashMap<String, Object> {
+
+
+        public ModelMap() {
+        }
+
+        public ModelMap(String attributeName, Object attributeValue) {
+            addAttribute(attributeName, attributeValue);
+        }
+
+        public ModelMap(Object attributeValue) {
+            addAttribute(attributeValue);
+        }
+
+
+        public ModelMap addAttribute(String attributeName, Object attributeValue) {
+            Assert.notNull(attributeName, "Model attribute name must not be null");
+            put(attributeName, attributeValue);
+            return this;
+        }
+
+        public ModelMap addAttribute(Object attributeValue) {
+            Assert.notNull(attributeValue, "Model object must not be null");
+            if (attributeValue instanceof Collection && ((Collection<?>) attributeValue).isEmpty()) {
+                return this;
+            }
+            return addAttribute(Conventions.getVariableName(attributeValue), attributeValue);
+        }
+
+        public ModelMap addAllAttributes(Collection<?> attributeValues) {
+            if (attributeValues != null) {
+                for (Object attributeValue : attributeValues) {
+                    addAttribute(attributeValue);
+                }
+            }
+            return this;
+        }
+
+
+        public ModelMap addAllAttributes(Map<String, ?> attributes) {
+            if (attributes != null) {
+                putAll(attributes);
+            }
+            return this;
+        }
+
+
+        public ModelMap mergeAttributes(Map<String, ?> attributes) {
+            if (attributes != null) {
+                for (Map.Entry<String, ?> entry : attributes.entrySet()) {
+                    String key = entry.getKey();
+                    if (!containsKey(key)) {
+                        put(key, entry.getValue());
+                    }
+                }
+            }
+            return this;
+        }
+
+
+        public boolean containsAttribute(String attributeName) {
+            return containsKey(attributeName);
+        }
+
+    }
+
+
