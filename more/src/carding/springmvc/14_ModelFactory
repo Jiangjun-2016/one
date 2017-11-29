@@ -1,0 +1,267 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+
+0.  ModelFactory是用来维护Model的，具体包含两个功能
+    （1）初始化Model
+    （2）处理器执行后将Model中相应的参数更新到SessionAttributes中
+
+1.  初始化Model其实是对@ModelAttribute和@SessionAttribute注解的执行，
+    执行的操作是在initModel中，
+    包括获取@SessionAttribute注解的参数的值
+    以及被@ModelAttribute注解的函数。
+        public void initModel(NativeWebRequest request, ModelAndViewContainer mavContainer, HandlerMethod handlerMethod)
+                throws Exception {
+            //从注解了@SessionAttribute中取出保存的参数，并合并到mavContainer中
+            Map<String, ?> sessionAttributes = this.sessionAttributesHandler.retrieveAttributes(request);
+            mavContainer.mergeAttributes(sessionAttributes);
+
+            //执行注释了@ModelAttribute的方法并将结果设置到Model
+            invokeModelAttributeMethods(request, mavContainer);
+
+            //遍历既注释了@ModelAttribute又在@SessionAttribute注释中的参数
+            for (String name : findSessionAttributeArguments(handlerMethod)) {
+                if (!mavContainer.containsAttribute(name)) {
+                    Object value = this.sessionAttributesHandler.retrieveAttribute(request, name);
+                    if (value == null) {
+                        throw new HttpSessionRequiredException("Expected session attribute '" + name + "'");
+                    }
+                    mavContainer.addAttribute(name, value);
+                }
+            }
+        }
+
+2.  更新Model的操作是在updateModel中，首先会更新@SessionAttribute中注解的值，然后会更新Model中的值。
+        //更新Model，包括两部分一是修改@SessionAttribute注解中值的value，二是更新Model中的值
+        public void updateModel(NativeWebRequest request, ModelAndViewContainer mavContainer) throws Exception {
+            ModelMap defaultModel = mavContainer.getDefaultModel();
+            if (mavContainer.getSessionStatus().isComplete()){
+                this.sessionAttributesHandler.cleanupAttributes(request);
+            }
+            else {
+                this.sessionAttributesHandler.storeAttributes(request, defaultModel);
+            }
+            if (!mavContainer.isRequestHandled() && mavContainer.getModel() == defaultModel) {
+                updateBindingResult(request, defaultModel);
+            }
+        }
+
+ModelFactory的完整源码如下：
+    public final class ModelFactory {
+
+        private static final Log logger = LogFactory.getLog(ModelFactory.class);
+
+        private final List<ModelMethod> modelMethods = new ArrayList<ModelMethod>();
+
+        private final WebDataBinderFactory dataBinderFactory;
+
+        private final SessionAttributesHandler sessionAttributesHandler;
+
+        public ModelFactory(List<InvocableHandlerMethod> invocableMethods, WebDataBinderFactory dataBinderFactory,
+                SessionAttributesHandler sessionAttributesHandler) {
+
+            if (invocableMethods != null) {
+                for (InvocableHandlerMethod method : invocableMethods) {
+                    this.modelMethods.add(new ModelMethod(method));
+                }
+            }
+            this.dataBinderFactory = dataBinderFactory;
+            this.sessionAttributesHandler = sessionAttributesHandler;
+        }
+
+        public void initModel(NativeWebRequest request, ModelAndViewContainer mavContainer, HandlerMethod handlerMethod)
+                throws Exception {
+            //从注解了@SessionAttribute中取出保存的参数，并合并到mavContainer中
+            Map<String, ?> sessionAttributes = this.sessionAttributesHandler.retrieveAttributes(request);
+            mavContainer.mergeAttributes(sessionAttributes);
+
+            //执行注释了@ModelAttribute的方法并将结果设置到Model
+            invokeModelAttributeMethods(request, mavContainer);
+
+            //遍历既注释了@ModelAttribute又在@SessionAttribute注释中的参数
+            for (String name : findSessionAttributeArguments(handlerMethod)) {
+                if (!mavContainer.containsAttribute(name)) {
+                    Object value = this.sessionAttributesHandler.retrieveAttribute(request, name);
+                    if (value == null) {
+                        throw new HttpSessionRequiredException("Expected session attribute '" + name + "'");
+                    }
+                    mavContainer.addAttribute(name, value);
+                }
+            }
+        }
+
+        private void invokeModelAttributeMethods(NativeWebRequest request, ModelAndViewContainer mavContainer)
+                throws Exception {
+
+            while (!this.modelMethods.isEmpty()) {
+                //获取注释了@ModelAttribute的方法
+                InvocableHandlerMethod attrMethod = getNextModelMethod(mavContainer).getHandlerMethod();
+                //获取注释了@ModelAttribute中设置的value作为参数名
+                String modelName = attrMethod.getMethodAnnotation(ModelAttribute.class).value();
+                //如果参数名已经在mavContainer中则跳过
+                if (mavContainer.containsAttribute(modelName)) {
+                    continue;
+                }
+
+                //执行@ModelAttribute注释的方法
+                Object returnValue = attrMethod.invokeForRequest(request, mavContainer);
+
+                if (!attrMethod.isVoid()){
+                    //使用getNameForReturnValue获取参数名
+                    String returnValueName = getNameForReturnValue(returnValue, attrMethod.getReturnType());
+                    if (!mavContainer.containsAttribute(returnValueName)) {
+                        mavContainer.addAttribute(returnValueName, returnValue);
+                    }
+                }
+            }
+        }
+        //获取每次要处理的ModelMethod
+        private ModelMethod getNextModelMethod(ModelAndViewContainer mavContainer) {
+            for (ModelMethod modelMethod : this.modelMethods) {
+                if (modelMethod.checkDependencies(mavContainer)) {
+                    if (logger.isTraceEnabled()) {
+                        logger.trace("Selected @ModelAttribute method " + modelMethod);
+                    }
+                    this.modelMethods.remove(modelMethod);
+                    return modelMethod;
+                }
+            }
+            ModelMethod modelMethod = this.modelMethods.get(0);
+            if (logger.isTraceEnabled()) {
+                logger.trace("Selected @ModelAttribute method (not present: " +
+                        modelMethod.getUnresolvedDependencies(mavContainer)+ ") " + modelMethod);
+            }
+            this.modelMethods.remove(modelMethod);
+            return modelMethod;
+        }
+        //查找被@SessionAttribute注解的并且被@ModelAttribute注解的参数
+        private List<String> findSessionAttributeArguments(HandlerMethod handlerMethod) {
+            List<String> result = new ArrayList<String>();
+            for (MethodParameter parameter : handlerMethod.getMethodParameters()) {
+                if (parameter.hasParameterAnnotation(ModelAttribute.class)) {
+                    String name = getNameForParameter(parameter);
+                    //判断是否@SessionAttribute注解中的值
+                    if (this.sessionAttributesHandler.isHandlerSessionAttribute(name, parameter.getParameterType())) {
+                        result.add(name);
+                    }
+                }
+            }
+            return result;
+        }
+        //获取参数名称
+        public static String getNameForParameter(MethodParameter parameter) {
+            ModelAttribute annot = parameter.getParameterAnnotation(ModelAttribute.class);
+            String attrName = (annot != null) ? annot.value() : null;
+            return StringUtils.hasText(attrName) ? attrName :  Conventions.getVariableNameForParameter(parameter);
+        }
+        //获取@ModelAttribute注解中的值
+        public static String getNameForReturnValue(Object returnValue, MethodParameter returnType) {
+            ModelAttribute annotation = returnType.getMethodAnnotation(ModelAttribute.class);
+            if (annotation != null && StringUtils.hasText(annotation.value())) {
+                return annotation.value();
+            }
+            else {
+                Method method = returnType.getMethod();
+                Class<?> resolvedType = GenericTypeResolver.resolveReturnType(method, returnType.getContainingClass());
+                return Conventions.getVariableNameForReturnType(method, resolvedType, returnValue);
+            }
+        }
+        //更新Model，包括两部分一是修改@SessionAttribute注解中值的value，二是更新Model中的值
+        public void updateModel(NativeWebRequest request, ModelAndViewContainer mavContainer) throws Exception {
+            ModelMap defaultModel = mavContainer.getDefaultModel();
+            if (mavContainer.getSessionStatus().isComplete()){
+                this.sessionAttributesHandler.cleanupAttributes(request);
+            }
+            else {
+                this.sessionAttributesHandler.storeAttributes(request, defaultModel);
+            }
+            if (!mavContainer.isRequestHandled() && mavContainer.getModel() == defaultModel) {
+                updateBindingResult(request, defaultModel);
+            }
+        }
+        //
+        private void updateBindingResult(NativeWebRequest request, ModelMap model) throws Exception {
+            List<String> keyNames = new ArrayList<String>(model.keySet());
+            for (String name : keyNames) {
+                Object value = model.get(name);
+
+                if (isBindingCandidate(name, value)) {
+                    String bindingResultKey = BindingResult.MODEL_KEY_PREFIX + name;
+
+                    if (!model.containsAttribute(bindingResultKey)) {
+                        WebDataBinder dataBinder = dataBinderFactory.createBinder(request, value, name);
+                        model.put(bindingResultKey, dataBinder.getBindingResult());
+                    }
+                }
+            }
+        }
+        //
+        private boolean isBindingCandidate(String attributeName, Object value) {
+            if (attributeName.startsWith(BindingResult.MODEL_KEY_PREFIX)) {
+                return false;
+            }
+
+            Class<?> attrType = (value != null) ? value.getClass() : null;
+            if (this.sessionAttributesHandler.isHandlerSessionAttribute(attributeName, attrType)) {
+                return true;
+            }
+
+            return (value != null && !value.getClass().isArray() && !(value instanceof Collection) &&
+                    !(value instanceof Map) && !BeanUtils.isSimpleValueType(value.getClass()));
+        }
+
+
+        private static class ModelMethod {
+
+            private final InvocableHandlerMethod handlerMethod;
+
+            private final Set<String> dependencies = new HashSet<String>();
+
+
+            private ModelMethod(InvocableHandlerMethod handlerMethod) {
+                this.handlerMethod = handlerMethod;
+                for (MethodParameter parameter : handlerMethod.getMethodParameters()) {
+                    if (parameter.hasParameterAnnotation(ModelAttribute.class)) {
+                        this.dependencies.add(getNameForParameter(parameter));
+                    }
+                }
+            }
+
+            public InvocableHandlerMethod getHandlerMethod() {
+                return this.handlerMethod;
+            }
+
+            public boolean checkDependencies(ModelAndViewContainer mavContainer) {
+                for (String name : this.dependencies) {
+                    if (!mavContainer.containsAttribute(name)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            public List<String> getUnresolvedDependencies(ModelAndViewContainer mavContainer) {
+                List<String> result = new ArrayList<String>(this.dependencies.size());
+                for (String name : this.dependencies) {
+                    if (!mavContainer.containsAttribute(name)) {
+                        result.add(name);
+                    }
+                }
+                return result;
+            }
+
+            @Override
+            public String toString() {
+                return this.handlerMethod.getMethod().toGenericString();
+            }
+        }
+
+    }
