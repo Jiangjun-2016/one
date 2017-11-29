@@ -1,0 +1,151 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  选取一个HandlerMethodArgumentResolver的具体实现类RequestParamMethodArgumentResolver来简单介绍一下具体的参数解析过程。
+    RequestParamMethodArgumentResolver简单来说就是对一个请求参数值的解析，将请求中的参数值解析成为Controller函数中参数需要的具体数据类型。
+
+1.  选取一个HandlerMethodArgumentResolver的具体实现类RequestParamMethodArgumentResolver来简单介绍一下具体的参数解析过程。
+    RequestParamMethodArgumentResolver简单来说就是对一个请求参数值的解析，将请求中的参数值解析成为Controller函数中参数需要的具体数据类型。
+    Controller中函数需要的参数
+        @RequestMapping("/getdata")
+        @ResponseBody
+        public Object getData(String name,Integer age){
+            return name+""+age;
+        }
+    我们发起的请求链接
+    http://localhost/product/getdata.action?name=admin&age=10
+    接下来我们跟踪一下代码看看springMVC是如何将请求中的参数name=admin和age=10解析成为函数中需要的具体数据类型String和Integer。
+
+2.  首先参数解析会到AbstractNamedValueMethodArgumentResolver类的resolveArgument函数
+        @Override
+    	public final Object resolveArgument(
+    			MethodParameter parameter, ModelAndViewContainer mavContainer,
+    			NativeWebRequest webRequest, WebDataBinderFactory binderFactory)
+    			throws Exception {
+
+    		Class<?> paramType = parameter.getParameterType();
+    		NamedValueInfo namedValueInfo = getNamedValueInfo(parameter);
+
+    		Object arg = resolveName(namedValueInfo.name, parameter, webRequest);
+    		if (arg == null) {
+    			if (namedValueInfo.defaultValue != null) {
+    				arg = resolveDefaultValue(namedValueInfo.defaultValue);
+    			}
+    			else if (namedValueInfo.required) {
+    				handleMissingValue(namedValueInfo.name, parameter);
+    			}
+    			arg = handleNullValue(namedValueInfo.name, arg, paramType);
+    		}
+    		else if ("".equals(arg) && (namedValueInfo.defaultValue != null)) {
+    			arg = resolveDefaultValue(namedValueInfo.defaultValue);
+    		}
+
+    		if (binderFactory != null) {
+    			WebDataBinder binder = binderFactory.createBinder(webRequest, null, namedValueInfo.name);
+    			arg = binder.convertIfNecessary(arg, paramType, parameter);
+    		}
+
+    		handleResolvedValue(arg, namedValueInfo.name, parameter, mavContainer, webRequest);
+
+    		return arg;
+    	}
+
+    NamedValueInfo namedValueInfo = getNamedValueInfo(parameter);首先会获取request中的参数name及值，
+    接下来是在RequestParamMethodArgumentResolver类的resolveName函数中获取这个参数的值
+            @Override
+        	protected Object resolveName(String name, MethodParameter parameter, NativeWebRequest webRequest) throws Exception {
+        		Object arg;
+
+        		HttpServletRequest servletRequest = webRequest.getNativeRequest(HttpServletRequest.class);
+        		MultipartHttpServletRequest multipartRequest =
+        			WebUtils.getNativeRequest(servletRequest, MultipartHttpServletRequest.class);
+
+        		if (MultipartFile.class.equals(parameter.getParameterType())) {
+        			assertIsMultipartRequest(servletRequest);
+        			Assert.notNull(multipartRequest, "Expected MultipartHttpServletRequest: is a MultipartResolver configured?");
+        			arg = multipartRequest.getFile(name);
+        		}
+        		else if (isMultipartFileCollection(parameter)) {
+        			assertIsMultipartRequest(servletRequest);
+        			Assert.notNull(multipartRequest, "Expected MultipartHttpServletRequest: is a MultipartResolver configured?");
+        			arg = multipartRequest.getFiles(name);
+        		}
+        		else if ("javax.servlet.http.Part".equals(parameter.getParameterType().getName())) {
+        			assertIsMultipartRequest(servletRequest);
+        			arg = servletRequest.getPart(name);
+        		}
+        		else {
+        			arg = null;
+        			if (multipartRequest != null) {
+        				List<MultipartFile> files = multipartRequest.getFiles(name);
+        				if (!files.isEmpty()) {
+        					arg = (files.size() == 1 ? files.get(0) : files);
+        				}
+        			}
+        			if (arg == null) {
+        				String[] paramValues = webRequest.getParameterValues(name);
+        				if (paramValues != null) {
+        					arg = paramValues.length == 1 ? paramValues[0] : paramValues;
+        				}
+        			}
+        		}
+
+        		return arg;
+        	}
+        String[] paramValues = webRequest.getParameterValues(name);获取了name=admini这个值。
+
+    参数转换的过程主要是在AbstractNamedValueMethodArgumentResolver类的resolveArgument函数中，主要是获取参数值和将参数转换为Controller中函数需要的参数类型。
+        @Override
+        public final Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
+                NativeWebRequest webRequest, WebDataBinderFactory binderFactory) throws Exception {
+
+            Class<?> paramType = parameter.getParameterType();
+            NamedValueInfo namedValueInfo = getNamedValueInfo(parameter);
+            //从request中获取参数值
+            Object arg = resolveName(namedValueInfo.name, parameter, webRequest);
+            if (arg == null) {
+                if (namedValueInfo.defaultValue != null) {
+                    arg = resolveDefaultValue(namedValueInfo.defaultValue);
+                }
+                else if (namedValueInfo.required && !parameter.getParameterType().getName().equals("java.util.Optional")) {
+                    handleMissingValue(namedValueInfo.name, parameter);
+                }
+                arg = handleNullValue(namedValueInfo.name, arg, paramType);
+            }
+            else if ("".equals(arg) && namedValueInfo.defaultValue != null) {
+                arg = resolveDefaultValue(namedValueInfo.defaultValue);
+            }
+            //将获取的参数值转换为Controller中函数需要的数据类型
+            if (binderFactory != null) {
+                WebDataBinder binder = binderFactory.createBinder(webRequest, null, namedValueInfo.name);
+                try {
+                    arg = binder.convertIfNecessary(arg, paramType, parameter);
+                }
+                catch (ConversionNotSupportedException ex) {
+                    throw new MethodArgumentConversionNotSupportedException(arg, ex.getRequiredType(),
+                            namedValueInfo.name, parameter, ex.getCause());
+                }
+                catch (TypeMismatchException ex) {
+                    throw new MethodArgumentTypeMismatchException(arg, ex.getRequiredType(),
+                            namedValueInfo.name, parameter, ex.getCause());
+
+                }
+            }
+
+            handleResolvedValue(arg, namedValueInfo.name, parameter, mavContainer, webRequest);
+
+            return arg;
+        }
+
