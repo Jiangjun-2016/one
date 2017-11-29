@@ -3,9 +3,246 @@ Handler:处理
 Detecting:探测
 Invocable:调用
 
-0.
+0.  @SessionAttribute作用于处理器类上，用于在多个请求之间传递参数，类似于Session的Attribute，但不完全一样，
+    一般来说@SessionAttribute设置的参数只用于暂时的传递，而不是长期的保存，长期保存的数据还是要放到Session中。
+
+1.  通过@SessionAttribute注解设置的参数有3类用法：
+    （1）在视图中通过request.getAttribute或session.getAttribute获取
+    （2）在后面请求返回的视图中通过session.getAttribute或者从model中获取
+    （3）自动将参数设置到后面请求所对应处理器的Model类型参数或者有@ModelAttribute注释的参数里面。
+
+2.  将一个参数设置到SessionAttribute中需要满足两个条件：
+    （1）在@SessionAttribute注解中设置了参数的名字或者类型
+    （2）在处理器中将参数设置到了model中。
+
+3.  @SessionAttribute用户后可以调用SessionStatus.setComplete来清除，这个方法只是清除SessionAttribute里的参数，而不会应用Session中的参数。
+
+4.  示例如下：注解@SessionAttribute中设置book、description和types={Double}，这样值会被放到@SessionAttribute中，
+    但Redirect跳转时就可以重新获得这些数据了，接下来操作sessionStatus.setComplete()，则会清除掉所有的数据，这样再次跳转时就无法获取数据了。
+        @Controller
+        @RequestMapping("/book")
+        @SessionAttributes(value ={"book","description"},types={Double.class})
+        public class RedirectController {
+
+            @RequestMapping("/index")
+            public String index(Model model){
+                model.addAttribute("book", "金刚经");
+                model.addAttribute("description","不擦擦擦擦擦擦擦车");
+                model.addAttribute("price", new Double("1000.00"));
+                //跳转之前将数据保存到book、description和price中，因为注解@SessionAttribute中有这几个参数
+                return "redirect:get.action";
+            }
+
+            @RequestMapping("/get")
+            public String get(@ModelAttribute ("book") String book,ModelMap model,
+                    SessionStatus sessionStatus){
+                //可以获得book、description和price的参数
+                System.out.println(model.get("book")+";"+model.get("description")+";"+model.get("price"));
+                sessionStatus.setComplete();
+                return "redirect:complete.action";
+            }
+
+            @RequestMapping("/complete")
+            public String complete(ModelMap modelMap){
+                //已经被清除，无法获取book的值
+                System.out.println(modelMap.get("book"));
+                modelMap.addAttribute("book", "妹纸");
+                return "sessionAttribute";
+            }
+
+        }
+    接下来我们分析一下@SessionAttribute的实现机制
+    第一步：我们首先要获取注解@SessionAttribute的值的情况，在RequestMappingHandlerAdapter中的getModelFactory中处理。
+            protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+                    HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+
+                //这里面对注解的@SessionAttribute的处理器做处理
+                ModelFactory modelFactory = getModelFactory(handlerMethod, binderFactory);
+
+                ........
+                //会对@SessionAttribute操作的值进行处理
+                modelFactory.initModel(webRequest, mavContainer, invocableMethod);
+                ........
+
+                return getModelAndView(mavContainer, modelFactory, webRequest);
+            }
+
+    在getModelFactory中会创建@SessionAttribute的处理器SessionAttributeHandler
+        private ModelFactory getModelFactory(HandlerMethod handlerMethod, WebDataBinderFactory binderFactory) {
+            //创建SessionAttribute处理器
+            SessionAttributesHandler sessionAttrHandler = getSessionAttributesHandler(handlerMethod);
+
+            return new ModelFactory(attrMethods, binderFactory, sessionAttrHandler);
+        }
+
+    getSessionAttributesHandler的操作就是获取或者初始化SessionAttributesHandler
+        //已经获取过的SessionAttribute放到Map中，如果没有则需要初始化
+        private SessionAttributesHandler getSessionAttributesHandler(HandlerMethod handlerMethod) {
+            Class<?> handlerType = handlerMethod.getBeanType();
+            SessionAttributesHandler sessionAttrHandler = this.sessionAttributesHandlerCache.get(handlerType);
+            if (sessionAttrHandler == null) {
+                synchronized (this.sessionAttributesHandlerCache) {
+                    sessionAttrHandler = this.sessionAttributesHandlerCache.get(handlerType);
+                    if (sessionAttrHandler == null) {
+                        //初始化sessionAttrHandler,并放到map中
+                        sessionAttrHandler = new SessionAttributesHandler(handlerType, sessionAttributeStore);
+                        this.sessionAttributesHandlerCache.put(handlerType, sessionAttrHandler);
+                    }
+                }
+            }
+            return sessionAttrHandler;
+        }
+
+    SessionAttributesHandler的构造函数中的操作如下，其实就是解析被@SessionAttribute注解的处理器，这样就完成了@SessionAttribute注解中设置的key的解析。
+        public SessionAttributesHandler(Class<?> handlerType, SessionAttributeStore sessionAttributeStore) {
+            Assert.notNull(sessionAttributeStore, "SessionAttributeStore may not be null.");
+            this.sessionAttributeStore = sessionAttributeStore;
+            //解析被@SessionAttribute注解的处理器
+            SessionAttributes annotation = AnnotationUtils.findAnnotation(handlerType, SessionAttributes.class);
+            if (annotation != null) {
+                this.attributeNames.addAll(Arrays.asList(annotation.names()));
+                this.attributeTypes.addAll(Arrays.asList(annotation.types()));
+            }
+
+            for (String attributeName : this.attributeNames) {
+                this.knownAttributeNames.add(attributeName);
+            }
+        }
+    接下来我们看看springMVC对@SessionAttribute的处理操作，在ModelFactory.initModel会对@SessionAttribute的注解进行处理操作。
+        protected ModelAndView invokeHandlerMethod(HttpServletRequest request,
+                HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
+
+            //这里面对注解的@SessionAttribute的处理器做处理
+            ModelFactory modelFactory = getModelFactory(handlerMethod, binderFactory);
+
+            ........
+            //会对@SessionAttribute操作的值进行处理
+            modelFactory.initModel(webRequest, mavContainer, invocableMethod);
+            ........
+
+            return getModelAndView(mavContainer, modelFactory, webRequest);
+        }
+
+    initModel其实做了两步操作，
+    一是：获取上一次请求保存在SessionAttributeHandler中值，给这次请求的值用，
+    二是将这次请求的处理结果可能会对上次的@SessionAttribute中的值进行改变的值进行保存给下一次请求使用。
+        public void initModel(NativeWebRequest request, ModelAndViewContainer mavContainer, HandlerMethod handlerMethod)
+                throws Exception {
+            //获取所有的@SessionAttribute注解设置的key中值
+            Map<String, ?> sessionAttributes = this.sessionAttributesHandler.retrieveAttributes(request);
+            //将获取的值传递给下一个请求使用
+            mavContainer.mergeAttributes(sessionAttributes);
+
+            invokeModelAttributeMethods(request, mavContainer);
+
+            //请求访问完之后将修改的值重新放到@SessionAttributeStore设置的key中
+            for (String name : findSessionAttributeArguments(handlerMethod)) {
+                if (!mavContainer.containsAttribute(name)) {
+                    Object value = this.sessionAttributesHandler.retrieveAttribute(request, name);
+                    if (value == null) {
+                        throw new HttpSessionRequiredException("Expected session attribute '" + name + "'");
+                    }
+                    mavContainer.addAttribute(name, value);
+                }
+            }
+        }
+
+    sessionAttributesHandler.retrieveAttributes的操作是将request中值，按照注解@SessionAttribute中key取值处理，然后保存到attribute中，作为这次请求的传递值使用。
+        public Map<String, Object> retrieveAttributes(WebRequest request) {
+            Map<String, Object> attributes = new HashMap<String, Object>();
+            //获取注解@SessionAttribute中设置的key
+            for (String name : this.knownAttributeNames) {
+                //如果设置的key有值则把它保存到attribute中，给跳转之后的请求使用
+                Object value = this.sessionAttributeStore.retrieveAttribute(request, name);
+                if (value != null) {
+                    attributes.put(name, value);
+                }
+            }
+            return attributes;
+        }
+    这样就完成了将值保存在SessionAttributeHandler中，这样下一次请求过来时依然可以从SessionAttributeHandler中获取上次的结果，完成了类似Session的实现机制，
+    但明显感觉和Session不一样，所有的请求其值是保存在一个同一个SessionAttributeHandler中。
+
+SessionAttributeHandler其实维持了一个Map结构来存取数据，功能主要有解析@SessionAttribute注解，get和set相关值，源码如下：
+    public class SessionAttributesHandler {
+
+        private final Set<String> attributeNames = new HashSet<String>();
+
+        private final Set<Class<?>> attributeTypes = new HashSet<Class<?>>();
+
+        private final Set<String> knownAttributeNames =
+                Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>(4));
+
+        private final SessionAttributeStore sessionAttributeStore;
 
 
+        //构造函数，解析@SessionAttribute注解，将其设置额key等信息保存
+        public SessionAttributesHandler(Class<?> handlerType, SessionAttributeStore sessionAttributeStore) {
+            Assert.notNull(sessionAttributeStore, "SessionAttributeStore may not be null.");
+            this.sessionAttributeStore = sessionAttributeStore;
+
+            SessionAttributes annotation = AnnotationUtils.findAnnotation(handlerType, SessionAttributes.class);
+            if (annotation != null) {
+                this.attributeNames.addAll(Arrays.asList(annotation.names()));
+                this.attributeTypes.addAll(Arrays.asList(annotation.types()));
+            }
+
+            for (String attributeName : this.attributeNames) {
+                this.knownAttributeNames.add(attributeName);
+            }
+        }
 
 
+        public boolean hasSessionAttributes() {
+            return ((this.attributeNames.size() > 0) || (this.attributeTypes.size() > 0));
+        }
 
+        //判断类型
+        public boolean isHandlerSessionAttribute(String attributeName, Class<?> attributeType) {
+            Assert.notNull(attributeName, "Attribute name must not be null");
+            if (this.attributeNames.contains(attributeName) || this.attributeTypes.contains(attributeType)) {
+                this.knownAttributeNames.add(attributeName);
+                return true;
+            }
+            else {
+                return false;
+            }
+        }
+
+        //保存
+        public void storeAttributes(WebRequest request, Map<String, ?> attributes) {
+            for (String name : attributes.keySet()) {
+                Object value = attributes.get(name);
+                Class<?> attrType = (value != null) ? value.getClass() : null;
+
+                if (isHandlerSessionAttribute(name, attrType)) {
+                    this.sessionAttributeStore.storeAttribute(request, name, value);
+                }
+            }
+        }
+
+        //获取
+        public Map<String, Object> retrieveAttributes(WebRequest request) {
+            Map<String, Object> attributes = new HashMap<String, Object>();
+            for (String name : this.knownAttributeNames) {
+                Object value = this.sessionAttributeStore.retrieveAttribute(request, name);
+                if (value != null) {
+                    attributes.put(name, value);
+                }
+            }
+            return attributes;
+        }
+
+        //清除所有内容
+        public void cleanupAttributes(WebRequest request) {
+            for (String attributeName : this.knownAttributeNames) {
+                this.sessionAttributeStore.cleanupAttribute(request, attributeName);
+            }
+        }
+
+        //获取所有值
+        Object retrieveAttribute(WebRequest request, String attributeName) {
+            return this.sessionAttributeStore.retrieveAttribute(request, attributeName);
+        }
+
+    }
