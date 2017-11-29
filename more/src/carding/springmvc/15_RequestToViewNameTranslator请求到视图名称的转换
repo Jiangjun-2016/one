@@ -1,0 +1,146 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+
+0.  RequestToViewNameTranslator可以在处理器返回的View为空时使用它根据Request获取viewName
+
+1.  RequestToViewNameTranslator提供的实现类只有一个DefaultRequestToViewNameTranslator
+    接口RequestToViewNameTranslator中定义的如下：提供了getViewName抽象方法，其实就是根据request请求获取来组装视图名称。
+        public interface RequestToViewNameTranslator {
+
+            String getViewName(HttpServletRequest request) throws Exception;
+
+        }
+
+    其实现类DefaultRequestToViewNameTranslator中的实现如下：
+    简单实现就是将 请求名称作为视图名称返回，逻辑还是比较简单的
+        @Override
+        public String getViewName(HttpServletRequest request) {
+            String lookupPath = this.urlPathHelper.getLookupPathForRequest(request);
+            return (this.prefix + transformPath(lookupPath) + this.suffix);
+        }
+
+    接下来我们看看RequestToViewNameTranslator在springMVC中的具体运行流程：
+    首先在DispatcherServlet的doDispatch函数中会设置默认的视图名
+        protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
+            ......
+            //设置默认的视图名称
+            applyDefaultViewName(processedRequest, mv);
+            ......
+        }
+    在applyDefaultViewName中会判断ModelAndView的hasView为空时，就设置viewName
+        private void applyDefaultViewName(HttpServletRequest request, ModelAndView mv) throws Exception {
+            if (mv != null && !mv.hasView()) {
+                mv.setViewName(getDefaultViewName(request));
+            }
+        }
+    getDefaultViewName的实现逻辑还是在ViewNameTranslator中
+        protected String getDefaultViewName(HttpServletRequest request) throws Exception {
+            return this.viewNameTranslator.getViewName(request);
+        }
+
+    在DefaultViewNameTranslator中实现的getViewName的逻辑如下，其实就是将 请求路径 作为ViewName
+        @Override
+        public String getViewName(HttpServletRequest request) {
+            String lookupPath = this.urlPathHelper.getLookupPathForRequest(request);
+            return (this.prefix + transformPath(lookupPath) + this.suffix);
+        }
+
+实现类DefaultViewNameTranslator的完整源码如下：
+    public class DefaultRequestToViewNameTranslator implements RequestToViewNameTranslator {
+
+        private static final String SLASH = "/";
+
+        private String prefix = "";
+
+        private String suffix = "";
+
+        private String separator = SLASH;
+
+        private boolean stripLeadingSlash = true;
+
+        private boolean stripTrailingSlash = true;
+
+        private boolean stripExtension = true;
+
+        private UrlPathHelper urlPathHelper = new UrlPathHelper();
+
+
+
+        public void setPrefix(String prefix) {
+            this.prefix = (prefix != null ? prefix : "");
+        }
+
+        public void setSuffix(String suffix) {
+            this.suffix = (suffix != null ? suffix : "");
+        }
+
+        public void setSeparator(String separator) {
+            this.separator = separator;
+        }
+
+        public void setStripLeadingSlash(boolean stripLeadingSlash) {
+            this.stripLeadingSlash = stripLeadingSlash;
+        }
+
+        public void setStripTrailingSlash(boolean stripTrailingSlash) {
+            this.stripTrailingSlash = stripTrailingSlash;
+        }
+
+        public void setStripExtension(boolean stripExtension) {
+            this.stripExtension = stripExtension;
+        }
+
+
+        public void setAlwaysUseFullPath(boolean alwaysUseFullPath) {
+            this.urlPathHelper.setAlwaysUseFullPath(alwaysUseFullPath);
+        }
+
+
+        public void setUrlDecode(boolean urlDecode) {
+            this.urlPathHelper.setUrlDecode(urlDecode);
+        }
+
+        public void setRemoveSemicolonContent(boolean removeSemicolonContent) {
+            this.urlPathHelper.setRemoveSemicolonContent(removeSemicolonContent);
+        }
+
+        public void setUrlPathHelper(UrlPathHelper urlPathHelper) {
+            Assert.notNull(urlPathHelper, "UrlPathHelper must not be null");
+            this.urlPathHelper = urlPathHelper;
+        }
+
+        //根据请求获取视图名称
+        @Override
+        public String getViewName(HttpServletRequest request) {
+            String lookupPath = this.urlPathHelper.getLookupPathForRequest(request);
+            return (this.prefix + transformPath(lookupPath) + this.suffix);
+        }
+
+
+        protected String transformPath(String lookupPath) {
+            String path = lookupPath;
+            if (this.stripLeadingSlash && path.startsWith(SLASH)) {
+                path = path.substring(1);
+            }
+            if (this.stripTrailingSlash && path.endsWith(SLASH)) {
+                path = path.substring(0, path.length() - 1);
+            }
+            if (this.stripExtension) {
+                path = StringUtils.stripFilenameExtension(path);
+            }
+            if (!SLASH.equals(this.separator)) {
+                path = StringUtils.replace(path, SLASH, this.separator);
+            }
+            return path;
+        }
+    }
