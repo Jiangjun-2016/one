@@ -1,0 +1,104 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  简单来说HandlerMethodReturnValueHandlerComposite其实就是springMVC提供的所有的HandlerMethodReturnValueHandler集合，
+    它定义了一个链表用于存储所有实现的HandlerMethodReturnValueHandler。
+    （1）private final List<HandlerMethodReturnValueHandler> returnValueHandlers  用于存储所有的HandlerMethodReturnValueHandler。
+    （2）supportsReturnType   函数用于判断HandlerMethodReturnValueHandler是否支持处理函数返回值。
+    （3）handleReturnValue    用于根据获取的HandlerMethodReturnValueHandler来处理函数返回值。
+    （4）HandlerMethodReturnValueHandlerComposite 提供了get和setHandlerMethodReturnValueHandler方法
+
+    public class HandlerMethodReturnValueHandlerComposite implements AsyncHandlerMethodReturnValueHandler {
+
+        protected final Log logger = LogFactory.getLog(getClass());
+
+        //存储springMVC提供的所有的函数返回值处理器
+        private final List<HandlerMethodReturnValueHandler> returnValueHandlers =
+            new ArrayList<HandlerMethodReturnValueHandler>();
+
+        public List<HandlerMethodReturnValueHandler> getHandlers() {
+            return Collections.unmodifiableList(this.returnValueHandlers);
+        }
+        //判断返回值是否有HandlerMethodReturnValueHandler的实现类去处理
+        @Override
+        public boolean supportsReturnType(MethodParameter returnType) {
+            return getReturnValueHandler(returnType) != null;
+        }
+
+        //根据返回类型选取返回值处理器
+        private HandlerMethodReturnValueHandler getReturnValueHandler(MethodParameter returnType) {
+            for (HandlerMethodReturnValueHandler handler : this.returnValueHandlers) {
+                if (handler.supportsReturnType(returnType)) {
+                    return handler;
+                }
+            }
+            return null;
+        }
+        //处理返回值
+        @Override
+        public void handleReturnValue(Object returnValue, MethodParameter returnType,
+                ModelAndViewContainer mavContainer, NativeWebRequest webRequest) throws Exception {
+
+            HandlerMethodReturnValueHandler handler = selectHandler(returnValue, returnType);
+            Assert.notNull(handler, "Unknown return value type [" + returnType.getParameterType().getName() + "]");
+            handler.handleReturnValue(returnValue, returnType, mavContainer, webRequest);
+        }
+
+        //查找是否处理返回值的HandlerMethodReturnValue
+        private HandlerMethodReturnValueHandler selectHandler(Object value, MethodParameter returnType) {
+            boolean isAsyncValue = isAsyncReturnValue(value, returnType);
+            for (HandlerMethodReturnValueHandler handler : this.returnValueHandlers) {
+                if (isAsyncValue && !(handler instanceof AsyncHandlerMethodReturnValueHandler)) {
+                    continue;
+                }
+                if (handler.supportsReturnType(returnType)) {
+                    return handler;
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public boolean isAsyncReturnValue(Object value, MethodParameter returnType) {
+            for (HandlerMethodReturnValueHandler handler : this.returnValueHandlers) {
+                if (handler instanceof AsyncHandlerMethodReturnValueHandler) {
+                    if (((AsyncHandlerMethodReturnValueHandler) handler).isAsyncReturnValue(value, returnType)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        //添加返回值处理器
+        public HandlerMethodReturnValueHandlerComposite addHandler(HandlerMethodReturnValueHandler handler) {
+            this.returnValueHandlers.add(handler);
+            return this;
+        }
+
+        //添加返回值处理器
+        public HandlerMethodReturnValueHandlerComposite addHandlers(List<? extends HandlerMethodReturnValueHandler> handlers) {
+            if (handlers != null) {
+                for (HandlerMethodReturnValueHandler handler : handlers) {
+                    this.returnValueHandlers.add(handler);
+                }
+            }
+            return this;
+        }
+
+    }
+
+
+

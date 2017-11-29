@@ -1,0 +1,71 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  HandlerMethodReturnValueHandler是用于对Controller中函数执行的返回值进行处理操作的，
+    springMVC提供了多个HandlerMethodReturnValueHandler的实现类。
+
+1.  接口HandlerMethodReturnValueHandler定义的抽象方法还是比较简单的，源码如下：
+    （1）supportsReturnType用于判断是否支持对返回值的处理。
+    （2）handleReturnValue实现对返回值的处理操作。
+        public interface HandlerMethodReturnValueHandler {
+
+            //判断是否支持
+            boolean supportsReturnType(MethodParameter returnType);
+
+
+            //处理返回值操作
+            void handleReturnValue(Object returnValue, MethodParameter returnType,
+                    ModelAndViewContainer mavContainer, NativeWebRequest webRequest) throws Exception;
+
+        }
+2.  springMVC中对返回值的操作流程如下：执行过程是在ServletInvocableHandlerMethod的invokeAndHandle中
+        public void invokeAndHandle(ServletWebRequest webRequest,
+                ModelAndViewContainer mavContainer, Object... providedArgs) throws Exception {
+            //处理操作的返回值
+            Object returnValue = invokeForRequest(webRequest, mavContainer, providedArgs);
+            .......
+            //对返回值进行处理操作
+            this.returnValueHandlers.handleReturnValue(
+                        returnValue, getReturnValueType(returnValue), mavContainer, webRequest);
+            .........
+        }
+
+3.  具体实现是在HandlerMethodReturnValueHandlerComposite中，HandlerMethodReturnValueHandlerComposite中包含了所有springMVC提供的返回值处理器。
+        @Override
+        public void handleReturnValue(Object returnValue, MethodParameter returnType,
+                ModelAndViewContainer mavContainer, NativeWebRequest webRequest) throws Exception {
+            //选择可以处理返回值的处理器
+            HandlerMethodReturnValueHandler handler = selectHandler(returnValue, returnType);
+            Assert.notNull(handler, "Unknown return value type [" + returnType.getParameterType().getName() + "]");
+            //处理返回值，具体实现是在HandlerMethodReturnValueHandler的实现类中
+            handler.handleReturnValue(returnValue, returnType, mavContainer, webRequest);
+        }
+
+    selectHandler是选取返回值处理器
+    //选择获取可以处理返回值的处理器
+    private HandlerMethodReturnValueHandler selectHandler(Object value, MethodParameter returnType) {
+            boolean isAsyncValue = isAsyncReturnValue(value, returnType);
+            for (HandlerMethodReturnValueHandler handler : this.returnValueHandlers) {
+                if (isAsyncValue && !(handler instanceof AsyncHandlerMethodReturnValueHandler)) {
+                    continue;
+                }
+                if (handler.supportsReturnType(returnType)) {
+                    return handler;
+                }
+            }
+            return null;
+        }
+
+    以上代码就完成了执行Controller函数之后对返回值的处理操作过程。

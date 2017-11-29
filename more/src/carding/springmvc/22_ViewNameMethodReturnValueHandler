@@ -1,0 +1,94 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  选取一个简单的实现类ViewNameMethodReturnValueHandler来简单介绍一下返回值处理操作。
+
+1.  返回值为jsp页面地址
+    @RequestMapping(value = "input")
+    public String inputProduct() {
+        logger.info("inputProduct called");
+        return "jsp/ProductForm";  //对应jsp页面名称
+    }
+
+    ViewNameMethodReturnValueHandler中对返回值jsp/ProductForm的处理
+        @Override
+        public void handleReturnValue(Object returnValue, MethodParameter returnType,
+                ModelAndViewContainer mavContainer, NativeWebRequest webRequest) throws Exception {
+            //判断是否是String类型
+            if (returnValue instanceof CharSequence) {
+                //如果是将其设置为视图名称
+                String viewName = returnValue.toString();
+                mavContainer.setViewName(viewName);
+                if (isRedirectViewName(viewName)) {
+                    mavContainer.setRedirectModelScenario(true);
+                }
+            }
+            else if (returnValue != null){
+                // should not happen
+                throw new UnsupportedOperationException("Unexpected return type: " +
+                        returnType.getParameterType().getName() + " in method: " + returnType.getMethod());
+            }
+        }
+
+    这样就把返回值jsp/ProductForm作为视图名称放到ModelAndView中，这样就完成了返回值的处理操作。
+
+ViewNameMethodReturnValueHandler完整源码如下，处理机制还是比较简单的。
+    //HandlerMethodReturnValueHandler的子类，主要就是Controller执行后返回的视图名称
+    public class ViewNameMethodReturnValueHandler implements HandlerMethodReturnValueHandler {
+
+        private String[] redirectPatterns;
+
+        //设置跳转链接的匹配方式
+        public void setRedirectPatterns(String... redirectPatterns) {
+            this.redirectPatterns = redirectPatterns;
+        }
+
+        /**
+         * The configured redirect patterns, if any.
+         */
+        public String[] getRedirectPatterns() {
+            return this.redirectPatterns;
+        }
+
+        @Override
+        public boolean supportsReturnType(MethodParameter returnType) {
+            Class<?> paramType = returnType.getParameterType();
+            return (void.class == paramType || CharSequence.class.isAssignableFrom(paramType));
+        }
+        //实现逻辑还是比较简单的，就是设置ModelAndViewContainer的viewName视图名称
+        @Override
+        public void handleReturnValue(Object returnValue, MethodParameter returnType,
+                ModelAndViewContainer mavContainer, NativeWebRequest webRequest) throws Exception {
+
+            if (returnValue instanceof CharSequence) {
+                String viewName = returnValue.toString();
+                mavContainer.setViewName(viewName);
+                if (isRedirectViewName(viewName)) {
+                    mavContainer.setRedirectModelScenario(true);
+                }
+            }
+            else if (returnValue != null){
+                // should not happen
+                throw new UnsupportedOperationException("Unexpected return type: " +
+                        returnType.getParameterType().getName() + " in method: " + returnType.getMethod());
+            }
+        }
+        //判断返回值是否是跳转链接，以redirect:开头
+        protected boolean isRedirectViewName(String viewName) {
+            return (PatternMatchUtils.simpleMatch(this.redirectPatterns, viewName) || viewName.startsWith("redirect:"));
+        }
+
+    }
+
