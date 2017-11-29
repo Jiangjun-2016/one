@@ -1,0 +1,51 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+
+0.  springMVC给我们提供Controller控制器，用来实现我们的逻辑处理，在Controller接口中定义的方法也是比较简单的，如下：
+    Controller接口及实现类：
+    Controller
+        AbstractController
+            AbstractUrlViewController
+                UrlFilenameViewController
+            MultiActionController
+            ParameterizableViewController
+            ServletForwardingController
+            ServletWrapingController
+
+
+    Controller有多个实现类，这些类就不做过多解释了，因为我们如果处理自己的业务还是需要重写他的handleRequest方法的。
+    Controller接口如下：
+        public interface Controller {
+
+            //执行请求处理操作，返回ModelAndView对象
+            ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception;
+
+        }
+
+    简单的定义一个处理操作：
+        public class ProductImplementController implements Controller {
+
+
+            @Override
+            public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception {
+                ModelAndView modelAndView = new ModelAndView("jsp/ProductForm");
+                return modelAndView;
+            }
+
+        }
+
+    springMVC的容器配置文件中注入这个Controller
+        <bean name="/input.action" class="com.tianjunwei.controller.ProductImplementController"></bean>
+
+    这样最终访问这个Controller时会跳到jsp/ProductForm的页面。
+
