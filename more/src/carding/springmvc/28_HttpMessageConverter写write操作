@@ -1,0 +1,206 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  上一篇博客 springMVC源码分析--HttpMessageConverter参数read操作中我们已经简单介绍了参数值转换的read操作，
+    接下来我们介绍一下返回值的处理操作。
+    同样返回值的操作操作也是在HandlerMethodReturnValueHandler中处理的，
+    可以参考一下老田写的springMVC源码分析--HandlerMethodReturnValueHandler返回值解析器（一）
+
+                <--Java对象--                         <--HttpInputMessage--       请求报文
+    springmvc                   HttpMessageConverter
+                --Java对象-->                         --HttpOutputMessage-->      响应报文
+
+1.  简单的返回值处理示例使用@ResponseBody进行注解：
+        @ResponseBody
+        @RequestMapping("/get")
+        public Object get(){
+            Product product = new Product();
+            product.setDescription("hello  springMVC  RestFul");
+            product.setId(10);
+            product.setName("springMVC");
+            product.setPrice(10);
+            return product; //在页面中返回json数据
+        }
+    这里返回值是一个Product对象，但真正浏览器获取的数据是json数据，处理的过程就是在HttpMessageConverter中实现的 。
+    配置一下消息处理使用FastJSON处理的配置
+            <mvc:annotation-driven>
+                <mvc:message-converters register-defaults="true">
+                    <bean
+                        class="com.alibaba.fastjson.support.spring.FastJsonHttpMessageConverter">
+                        <property name="supportedMediaTypes">
+                            <array>
+                                <value>text/html;charset=UTF-8</value>
+                            </array>
+                        </property>
+                        <property name="features">
+                            <array>
+                                <value>WriteMapNullValue</value>
+                                <value>WriteNullStringAsEmpty</value>
+                                <value>DisableCircularReferenceDetect</value>
+                            </array>
+                        </property>
+                    </bean>
+                </mvc:message-converters>
+            </mvc:annotation-driven>
+    这样返回值的处理操作就是使用FastJsonHttpMessageConverter来进行处理，将返回值转为json数据返回。
+    返回值的处理是在HandlerMethodReturnValueHandlerComposite中handleReturnValue中实现的。
+        @Override
+        public void handleReturnValue(Object returnValue, MethodParameter returnType,
+                ModelAndViewContainer mavContainer, NativeWebRequest webRequest) throws Exception {
+
+            HandlerMethodReturnValueHandler handler = selectHandler(returnValue, returnType);
+            Assert.notNull(handler, "Unknown return value type [" + returnType.getParameterType().getName() + "]");
+            handler.handleReturnValue(returnValue, returnType, mavContainer, webRequest);
+        }
+    接下来是在子类RequestResponseBodyMethodProcessor的handleReturnValue中处理操作
+            @Override
+            public void handleReturnValue(Object returnValue, MethodParameter returnType,
+                    ModelAndViewContainer mavContainer, NativeWebRequest webRequest)
+                    throws IOException, HttpMediaTypeNotAcceptableException, HttpMessageNotWritableException {
+
+                mavContainer.setRequestHandled(true);
+
+                // Try even with null return value. ResponseBodyAdvice could get involved.
+                writeWithMessageConverters(returnValue, returnType, webRequest);
+            }
+    在RequestResponseBodyMethodProcessor的父类AbstractMessageConverterMethodProcessor的writeWithMessageConverters中处理操作
+        protected <T> void writeWithMessageConverters(T returnValue, MethodParameter returnType, NativeWebRequest webRequest)
+                throws IOException, HttpMediaTypeNotAcceptableException, HttpMessageNotWritableException {
+
+            ServletServerHttpRequest inputMessage = createInputMessage(webRequest);
+            ServletServerHttpResponse outputMessage = createOutputMessage(webRequest);
+            writeWithMessageConverters(returnValue, returnType, inputMessage, outputMessage);
+        }
+    接下来就是通过职责链模式选择HttpMessageConverter的实现类来进行数据转换操作。
+        @SuppressWarnings("unchecked")
+        protected <T> void writeWithMessageConverters(T returnValue, MethodParameter returnType,
+                ServletServerHttpRequest inputMessage, ServletServerHttpResponse outputMessage)
+                throws IOException, HttpMediaTypeNotAcceptableException, HttpMessageNotWritableException {
+
+            Class<?> returnValueClass = getReturnValueType(returnValue, returnType);
+            Type returnValueType = getGenericType(returnType);
+            HttpServletRequest servletRequest = inputMessage.getServletRequest();
+            List<MediaType> requestedMediaTypes = getAcceptableMediaTypes(servletRequest);
+            List<MediaType> producibleMediaTypes = getProducibleMediaTypes(servletRequest, returnValueClass, returnValueType);
+
+            if (returnValue != null && producibleMediaTypes.isEmpty()) {
+                throw new IllegalArgumentException("No converter found for return value of type: " + returnValueClass);
+            }
+
+            Set<MediaType> compatibleMediaTypes = new LinkedHashSet<MediaType>();
+            for (MediaType requestedType : requestedMediaTypes) {
+                for (MediaType producibleType : producibleMediaTypes) {
+                    if (requestedType.isCompatibleWith(producibleType)) {
+                        compatibleMediaTypes.add(getMostSpecificMediaType(requestedType, producibleType));
+                    }
+                }
+            }
+            if (compatibleMediaTypes.isEmpty()) {
+                if (returnValue != null) {
+                    throw new HttpMediaTypeNotAcceptableException(producibleMediaTypes);
+                }
+                return;
+            }
+
+            List<MediaType> mediaTypes = new ArrayList<MediaType>(compatibleMediaTypes);
+            MediaType.sortBySpecificityAndQuality(mediaTypes);
+
+            MediaType selectedMediaType = null;
+            for (MediaType mediaType : mediaTypes) {
+                if (mediaType.isConcrete()) {
+                    selectedMediaType = mediaType;
+                    break;
+                }
+                else if (mediaType.equals(MediaType.ALL) || mediaType.equals(MEDIA_TYPE_APPLICATION)) {
+                    selectedMediaType = MediaType.APPLICATION_OCTET_STREAM;
+                    break;
+                }
+            }
+
+            if (selectedMediaType != null) {
+                selectedMediaType = selectedMediaType.removeQualityValue();
+                //匹配消息数据转换器
+                for (HttpMessageConverter<?> messageConverter : this.messageConverters) {
+                    if (messageConverter instanceof GenericHttpMessageConverter) {
+                        if (((GenericHttpMessageConverter<T>) messageConverter).canWrite(returnValueType,
+                                returnValueClass, selectedMediaType)) {
+                            returnValue = (T) getAdvice().beforeBodyWrite(returnValue, returnType, selectedMediaType,
+                                    (Class<? extends HttpMessageConverter<?>>) messageConverter.getClass(),
+                                    inputMessage, outputMessage);
+                            if (returnValue != null) {
+                                addContentDispositionHeader(inputMessage, outputMessage);
+                                //进行消息转换成配置的格式
+                                ((GenericHttpMessageConverter<T>) messageConverter).write(returnValue,
+                                        returnValueType, selectedMediaType, outputMessage);
+                                if (logger.isDebugEnabled()) {
+                                    logger.debug("Written [" + returnValue + "] as \"" +
+                                            selectedMediaType + "\" using [" + messageConverter + "]");
+                                }
+                            }
+                            return;
+                        }
+                    }
+                    else if (messageConverter.canWrite(returnValueClass, selectedMediaType)) {
+                        returnValue = (T) getAdvice().beforeBodyWrite(returnValue, returnType, selectedMediaType,
+                                (Class<? extends HttpMessageConverter<?>>) messageConverter.getClass(),
+                                inputMessage, outputMessage);
+                        if (returnValue != null) {
+                            addContentDispositionHeader(inputMessage, outputMessage);
+                            //将数据转换为配置的数据格式
+                            ((HttpMessageConverter<T>) messageConverter).write(returnValue,
+                                    selectedMediaType, outputMessage);
+                            if (logger.isDebugEnabled()) {
+                                logger.debug("Written [" + returnValue + "] as \"" +
+                                        selectedMediaType + "\" using [" + messageConverter + "]");
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
+
+            if (returnValue != null) {
+                throw new HttpMediaTypeNotAcceptableException(this.allSupportedMediaTypes);
+            }
+        }
+    最终会选择FastJsonHttpMessageConverter 的write方法中进行处理操作，就是将数据转换为json写到输出流中
+        @Override
+        protected void writeInternal(Object obj, HttpOutputMessage outputMessage)
+                throws IOException, HttpMessageNotWritableException {
+            HttpHeaders headers = outputMessage.getHeaders();
+            ByteArrayOutputStream outnew = new ByteArrayOutputStream();
+            int len = JSON.writeJSONString(outnew, //
+                                           fastJsonConfig.getCharset(), //
+                                           obj, //
+                                           fastJsonConfig.getSerializeConfig(), //
+                                           fastJsonConfig.getSerializeFilters(), //
+                                           fastJsonConfig.getDateFormat(), //
+                                           JSON.DEFAULT_GENERATE_FEATURE, //
+                                           fastJsonConfig.getSerializerFeatures());
+            headers.setContentLength(len);
+            OutputStream out = outputMessage.getBody();
+            outnew.writeTo(out);
+            outnew.close();
+        }
+springMVC默认提供了很多参数和结果值处理器，包括如下：
+（1）MappingJackson2HttpMessageConverter
+（2）GsonHttpMessageConverter
+（3）ByteArrayHttpMessageConverter
+（4）ObjectToStringHttpMessageConverter
+（5）ProtobufHttpMessageConverter
+（6）ResourceHttpMessageConverter
+（7）StringHttpMessageConverter
+（8）AllEncompassingFormHttpMessageConverter
+
