@@ -1,0 +1,62 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  我们已经简单介绍了一些ViewResolver的知识，ViewResolver的主要功能就是根据配置的视图解析器实现类来生成一个View对象。
+    接下来我们通过介绍常见InternalResourceViewResolver来对ViewResolver的运行流程有一个简单的了解和认识。
+
+1、首先在配置文件中配置视图解析器
+    <bean id="viewResolver"
+        class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+        <property name="prefix" value="/WEB-INF/" />//视图文件路径
+        <property name="suffix" value=".jsp" />//视图文件后缀
+    </bean>
+
+2、在Controller中返回视图文件路径及名称，这样返回值jsp/ProductForm对应的其实就是一个jsp文件的路径了。
+        @RequestMapping(value = "input")
+        public String inputProduct() {
+            logger.info("inputProduct called");
+            return "jsp/ProductForm";  //对应jsp页面名称
+        }
+
+接下来我们介绍一个ViewResolver的执行流程。
+1、首先执行的流程开始在DispatcherServlet的render函数中，会调用resolverViewName来获取View对象。
+        protected void render(ModelAndView mv, HttpServletRequest request, HttpServletResponse response) throws Exception {
+            // Determine locale for request and apply it to the response.
+
+            ........
+
+            View view;
+            ........
+            //获得视图
+            view = resolveViewName(mv.getViewName(), mv.getModelInternal(), locale, request);
+
+            .......
+        }
+    resolveViewName的主要工作就是从配置的所有视图解析器中查找一个可以生成View对象的视图解析器。
+        protected View resolveViewName(String viewName, Map<String, Object> model, Locale locale,
+                HttpServletRequest request) throws Exception {
+
+            for (ViewResolver viewResolver : this.viewResolvers) {
+                View view = viewResolver.resolveViewName(viewName, locale);
+                if (view != null) {
+                    return view;
+                }
+            }
+            return null;
+        }
+
+    这里选取的是InternalResourceViewResolver。
+    在InternalResourceViewResolver中的操作就是将viewName和locale设置到View对象中，这样就完成了View对象的创建。
+
