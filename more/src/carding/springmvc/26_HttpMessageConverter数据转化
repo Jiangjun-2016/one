@@ -1,0 +1,91 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  之前的博客我们已经介绍了很多springMVC相关的模块，接下来我们介绍一下springMVC在获取参数和返回结果值方面的处理。
+    虽然在之前的博客老田已经分别介绍了参数处理器和返回值处理器：
+    （1）springMVC参数值处理器 springMVC源码分析--HandlerMethodArgumentResolver参数解析器（一）
+    （2）springMVC返回值处理器 springMVC源码分析--HandlerMethodReturnValueHandler返回值解析器（一）
+    但对参数和返回值的真正处理类并有进行详细的介绍，接下来老田用几篇博客来介绍了一下数据Message在参数和返回值上的处理过程。
+
+1.  springMVC对数据Message的处理操作提供了一个接口HttpMessageConverter，用来对参数值和返回值的转换处理。
+    HttpMessageConverter提供的方法还是比较简单的就是判断是否支持可读、可写以及读写操作。
+        public interface HttpMessageConverter<T> {
+
+
+            //判断数据类型是否可读
+            boolean canRead(Class<?> clazz, MediaType mediaType);
+
+
+            //判断数据是否可写
+            boolean canWrite(Class<?> clazz, MediaType mediaType);
+
+
+            //获取支持的数据类型
+            List<MediaType> getSupportedMediaTypes();
+
+
+            //对参数值进行读，转换为需要的类型
+            T read(Class<? extends T> clazz, HttpInputMessage inputMessage)
+                    throws IOException, HttpMessageNotReadableException;
+
+            //将返回值发送给请求者
+            void write(T t, MediaType contentType, HttpOutputMessage outputMessage)
+                    throws IOException, HttpMessageNotWritableException;
+
+        }
+
+    当然在读写操作方面springMVC又提供了读操作接口HttpInputMessage和写操作接口HttpOutputMessage来完成数据的读写操作。
+    HttpInputMessage提供的接口就是将body中的数据转为输入流
+        public interface HttpInputMessage extends HttpMessage {
+
+            //获取body中的数据作为输入流
+            InputStream getBody() throws IOException;
+
+        }
+
+    HttpOutputMessage提供的接口就是将body中的数据转为输出流
+        public interface HttpOutputMessage extends HttpMessage {
+
+            //将数据转为输出流
+            OutputStream getBody() throws IOException;
+
+        }
+
+    父接口HttpMessage提供的方法是读取头部中的信息
+        public interface HttpMessage {
+
+            //获取头部中的信息
+            HttpHeaders getHeaders();
+
+        }
+
+    在SpringMVC进入readString方法前，
+    会根据@RequestBody注解选择适当的HttpMessageConverter实现类来将请求参数解析到string变量中，
+    具体来说是使用了StringHttpMessageConverter类，
+    它的canRead()方法返回true，然后它的read()方法会从请求中读出请求参数，绑定到readString()方法的string变量中。
+
+    当SpringMVC执行readString方法后，
+    由于返回值标识了@ResponseBody，
+    SpringMVC将使用StringHttpMessageConverter的write()方法，
+    将结果作为String值写入响应报文，
+    当然，此时canWrite()方法返回true。
+
+我们可以用下面的图，简单描述一下这个过程。
+
+
+                <--Java对象--                         <--HttpInputMessage--       请求报文
+    springmvc                   HttpMessageConverter
+                --Java对象-->                         --HttpOutputMessage-->      响应报文
+
