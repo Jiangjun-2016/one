@@ -1,0 +1,168 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  上一篇博客 springMVC源码分析--HttpMessageConverter数据转化（一）中我们简单介绍了一下HttpMessageConverter接口提供的几个方法，
+    主要有以下几个方法：
+    （1）canRead 是否可以读
+    （2）canWrite 是否可以写
+    （3）read() 读数据
+    （4）write() 写数据
+    接下来我们介绍一下读取数据的处理操作。
+
+                <--Java对象--                         <--HttpInputMessage--       请求报文
+    springmvc                   HttpMessageConverter
+                --Java对象-->                         --HttpOutputMessage-->      响应报文
+
+    首先要去重温一下参数处理器需要做的操作springMVC源码分析--RequestParamMethodArgumentResolver参数解析器（三），
+    AbstractNamedValueMethodArgumentResolver中的resolveArgument方法，解析参数值
+        public final Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
+                NativeWebRequest webRequest, WebDataBinderFactory binderFactory) throws Exception {
+            .......
+            Object arg = resolveName(namedValueInfo.name, parameter, webRequest);
+            ......
+        }
+
+    简单的提交数据的示例：
+       @RequestMapping(value="/save")
+       public String saveProduct( String name,@RequestBody String description,@RequestBody float price, Model model)
+             .......
+
+    我们可以在HandlerMethodArgumentResolver的子类
+    RequestResponseBodyMethodProcessor的方法resolveArgument看到如下处理，
+    这里就是对提交的参数的处理
+        public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
+                NativeWebRequest webRequest, WebDataBinderFactory binderFactory) throws Exception {
+
+            Object arg = readWithMessageConverters(webRequest, parameter, parameter.getGenericParameterType());
+            .........
+        }
+
+    接下来在readWithMessageConverters中的处理如下：
+        @Override
+        protected <T> Object readWithMessageConverters(NativeWebRequest webRequest, MethodParameter methodParam,
+                Type paramType) throws IOException, HttpMediaTypeNotSupportedException, HttpMessageNotReadableException {
+            HttpServletRequest servletRequest = webRequest.getNativeRequest(HttpServletRequest.class);
+            ServletServerHttpRequest inputMessage = new ServletServerHttpRequest(servletRequest);
+            Object arg = readWithMessageConverters(inputMessage, methodParam, paramType);
+            if (arg == null) {
+                if (methodParam.getParameterAnnotation(RequestBody.class).required()) {
+                    throw new HttpMessageNotReadableException("Required request body is missing: " +
+                            methodParam.getMethod().toGenericString());
+                }
+            }
+            return arg;
+        }
+
+    在父类AbstractMessageConverterMethodArgumentResolver的方法readWithMessageConverters中的处理如下：
+    简单来说就是根据提供的实现的HttpMessageConverter来对提交的RequestBody中的数据进行转换处理。
+
+            @SuppressWarnings("unchecked")
+            protected <T> Object readWithMessageConverters(HttpInputMessage inputMessage, MethodParameter param,
+                    Type targetType) throws IOException, HttpMediaTypeNotSupportedException, HttpMessageNotReadableException {
+                //获取数据类型
+                MediaType contentType;
+                boolean noContentType = false;
+                try {
+                    contentType = inputMessage.getHeaders().getContentType();
+                }
+                catch (InvalidMediaTypeException ex) {
+                    throw new HttpMediaTypeNotSupportedException(ex.getMessage());
+                }
+                if (contentType == null) {
+                    noContentType = true;
+                    contentType = MediaType.APPLICATION_OCTET_STREAM;
+                }
+
+                Class<?> contextClass = (param != null ? param.getContainingClass() : null);
+                Class<T> targetClass = (targetType instanceof Class<?> ? (Class<T>) targetType : null);
+                if (targetClass == null) {
+                    ResolvableType resolvableType = (param != null ?
+                            ResolvableType.forMethodParameter(param) : ResolvableType.forType(targetType));
+                    targetClass = (Class<T>) resolvableType.resolve();
+                }
+
+                HttpMethod httpMethod = ((HttpRequest) inputMessage).getMethod();
+                Object body = NO_VALUE;
+
+                try {
+                    inputMessage = new EmptyBodyCheckingHttpInputMessage(inputMessage);
+                    //选择适合的消息处理器来处理参数
+                    for (HttpMessageConverter<?> converter : this.messageConverters) {
+                        Class<HttpMessageConverter<?>> converterType = (Class<HttpMessageConverter<?>>) converter.getClass();
+                        //判断是否适合处理参数
+                        if (converter instanceof GenericHttpMessageConverter) {
+                            GenericHttpMessageConverter<?> genericConverter = (GenericHttpMessageConverter<?>) converter;
+                            if (genericConverter.canRead(targetType, contextClass, contentType)) {
+                                if (logger.isDebugEnabled()) {
+                                    logger.debug("Read [" + targetType + "] as \"" + contentType + "\" with [" + converter + "]");
+                                }
+                                if (inputMessage.getBody() != null) {
+                                    inputMessage = getAdvice().beforeBodyRead(inputMessage, param, targetType, converterType);
+                                    //处理参数
+                                    body = genericConverter.read(targetType, contextClass, inputMessage);
+                                    body = getAdvice().afterBodyRead(body, inputMessage, param, targetType, converterType);
+                                }
+                                else {
+                                    body = null;
+                                    body = getAdvice().handleEmptyBody(body, inputMessage, param, targetType, converterType);
+                                }
+                                break;
+                            }
+                        }
+                        else if (targetClass != null) {
+                            if (converter.canRead(targetClass, contentType)) {
+                                if (logger.isDebugEnabled()) {
+                                    logger.debug("Read [" + targetType + "] as \"" + contentType + "\" with [" + converter + "]");
+                                }
+                                if (inputMessage.getBody() != null) {
+                                    inputMessage = getAdvice().beforeBodyRead(inputMessage, param, targetType, converterType);
+                                    //处理数据，对于简单的String数据使用StringHttpMessageConverter进行处理
+                                    body = ((HttpMessageConverter<T>) converter).read(targetClass, inputMessage);
+                                    body = getAdvice().afterBodyRead(body, inputMessage, param, targetType, converterType);
+                                }
+                                else {
+                                    body = null;
+                                    body = getAdvice().handleEmptyBody(body, inputMessage, param, targetType, converterType);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch (IOException ex) {
+                    throw new HttpMessageNotReadableException("Could not read document: " + ex.getMessage(), ex);
+                }
+
+                if (body == NO_VALUE) {
+                    if (httpMethod == null || !SUPPORTED_METHODS.contains(httpMethod) ||
+                            (noContentType && inputMessage.getBody() == null)) {
+                        return null;
+                    }
+                    throw new HttpMediaTypeNotSupportedException(contentType, this.allSupportedMediaTypes);
+                }
+                //最终返回处理的结果值
+                return body;
+            }
+
+    springMVC默认提供了很多参数和结果值处理器，包括如下：
+    （1）MappingJackson2HttpMessageConverter
+    （2）GsonHttpMessageConverter
+    （3）ByteArrayHttpMessageConverter
+    （4）ObjectToStringHttpMessageConverter
+    （5）ProtobufHttpMessageConverter
+    （6）ResourceHttpMessageConverter
+    （7）StringHttpMessageConverter
+    （8）AllEncompassingFormHttpMessageConverter
+
