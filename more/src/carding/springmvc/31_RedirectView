@@ -1,0 +1,90 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+render：提供
+merged:合并
+
+0.  之前两篇博客springMVC源码分析--视图View（一）和springMVC源码分析--视图AbstractView和InternalResourceView（二）中我们已经简单的介绍了View相关的知识，
+    接下来我们介绍一个比较常用的RedirectView，顾名思义RedirectView是用于页面跳转使用的。
+    跳转的示例：
+            @RequestMapping("/index")
+            public String index(Model model,RedirectAttributes attr){
+                attr.addAttribute("attributeName", "attributeValue");
+                model.addAttribute("book", "金刚经");
+                model.addAttribute("description","不擦擦擦擦擦擦擦车"+new Random().nextInt(100));
+                model.addAttribute("price", new Double("1000.00"));
+                model.addAttribute("attributeName1", "attributeValue1");
+                //跳转之前将数据保存到book、description和price中，因为注解@SessionAttribute中有这几个参数
+                return "redirect:get.action";
+            }
+    返回的值为“redirect:get.action”，这样在处理之后我们会看到浏览器会跳转到get.action中，
+    首先我们需要了解请求的跳转会在浏览器中修改请求链接，
+    这样跳转的请求和原请求就是两个不相干的请求，
+    跳转的请求会丢失掉原请求的中的所有数据，
+    一般的解决方法是将原请求中的数据放到跳转请求的链接中这样来获取数据。
+    接下来我们看看springMVC的RediectView所做的处理，让我们不用关心原请求中的值问题。
+
+    首先当返回值为"redirect:get.action"时，
+    会调用ViewNameMethodReturnValueHandler的handleReturnValue方法，判断是否是跳转页面，
+    设置跳转标记
+    ViewNameMethodReturnValueHandler中的实现如下：
+            @Override
+            public void handleReturnValue(Object returnValue, MethodParameter returnType,
+                    ModelAndViewContainer mavContainer, NativeWebRequest webRequest) throws Exception {
+
+                if (returnValue instanceof CharSequence) {
+                    String viewName = returnValue.toString();
+                    mavContainer.setViewName(viewName);
+                    //用于判断是否是跳转页面 redirect
+                    if (isRedirectViewName(viewName)) {
+                        mavContainer.setRedirectModelScenario(true);
+                    }
+                }
+                else if (returnValue != null){
+                    // should not happen
+                    throw new UnsupportedOperationException("Unexpected return type: " +
+                            returnType.getParameterType().getName() + " in method: " + returnType.getMethod());
+                }
+            }
+    当判断页面是跳转页面是ViewResolver生成的View对象是RedirectView，这样就可以实现页面跳转工作了。
+
+    接下来我们看看在RedirectView中所做的操作，
+    最终的实现是在renderMergedOutputModel中完成实现的，
+    这边需要实现的机制是在连接重定向时数据会丢失，
+    这样使用FlashMap将数据保存起来作为重定向后的数据使用。
+        @Override
+        protected void renderMergedOutputModel(Map<String, Object> model, HttpServletRequest request,
+                HttpServletResponse response) throws IOException {
+            //创建跳转链接
+            String targetUrl = createTargetUrl(model, request);
+            targetUrl = updateTargetUrl(targetUrl, model, request, response);
+            //获取原请求所携带的数据
+            FlashMap flashMap = RequestContextUtils.getOutputFlashMap(request);
+            if (!CollectionUtils.isEmpty(flashMap)) {
+                UriComponents uriComponents = UriComponentsBuilder.fromUriString(targetUrl).build();
+                flashMap.setTargetRequestPath(uriComponents.getPath());
+                flashMap.addTargetRequestParams(uriComponents.getQueryParams());
+                FlashMapManager flashMapManager = RequestContextUtils.getFlashMapManager(request);
+                if (flashMapManager == null) {
+                    throw new IllegalStateException("FlashMapManager not found despite output FlashMap having been set");
+                }
+                //将数据保存起来，作为跳转之后请求的数据使用
+                flashMapManager.saveOutputFlashMap(flashMap, request, response);
+            }
+            //重定向操作
+            sendRedirect(request, response, targetUrl, this.http10Compatible);
+        }
+
+    简单来说RedirectView实现了链接的重定向，并且将数据保存到FlashMap中，这样在跳转后的链接中可以获取一些数据。
+

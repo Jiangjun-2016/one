@@ -14,6 +14,70 @@ Composite:混合成的
 IllegalIllegal:非法的
 render：提供
 
-0.
+0.  在博客springMVC源码分析--ViewResolver视图解析器（一）中我们介绍了视图解析器ViewResolver会解析视图生成View对象，
+    接下来我们介绍一下View视图相关的知识。
+
+1.  不同的实现类有不同的视图效果：
+    1、VelocityView是用来和Velocity框架结合生成页面视图
+    2、FreeMarkerView是用来和FreeMarker框架结合生成页面视图
+    3、JstlView是用来生成jstl页面
+    4、RedirectView是生成页面跳转视图的。
+
+    View接口提供的接口方法还是比较简单的，这也是springMVC接口一贯的方式。
+        public interface View {
+
+            String RESPONSE_STATUS_ATTRIBUTE = View.class.getName() + ".responseStatus";
+
+            String PATH_VARIABLES = View.class.getName() + ".pathVariables";
+
+            String SELECTED_CONTENT_TYPE = View.class.getName() + ".selectedContentType";
+
+            String getContentType();
+
+            void render(Map<String, ?> model, HttpServletRequest request, HttpServletResponse response) throws Exception;
+
+        }
+    简单说一下render方法的最终实现机制
+    （1）model是一个Map结构，其实就是ModelAndView中map，存放了我们返回给请求的所有结果值
+    （2）request和response当然就是请求和返回了
+    render中做的操作就是将model中的值全部存放到request和response中，这样就完成了请求的处理操作，最终就是返回response请求。
+
+    DispatcherServlet中的处理流程操作：
+
+            protected void render(ModelAndView mv, HttpServletRequest request, HttpServletResponse response) throws Exception {
+                //设置语言
+                Locale locale = this.localeResolver.resolveLocale(request);
+                response.setLocale(locale);
+
+                View view;
+                if (mv.isReference()) {
+                    //通过ViewResolver解析生成View对象
+                    view = resolveViewName(mv.getViewName(), mv.getModelInternal(), locale, request);
+                    if (view == null) {
+                        throw new ServletException("Could not resolve view with name '" + mv.getViewName() +
+                                "' in servlet with name '" + getServletName() + "'");
+                    }
+                }
+                else {
+                    //直接从ModelAndView中获取View对象
+                    view = mv.getView();
+                    if (view == null) {
+                        throw new ServletException("ModelAndView [" + mv + "] neither contains a view name nor a " +
+                                "View object in servlet with name '" + getServletName() + "'");
+                    }
+                }
+
+                try {
+                    //调用View对象的render方法
+                    view.render(mv.getModelInternal(), request, response);
+                }
+                catch (Exception ex) {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Error rendering view [" + view + "] in DispatcherServlet with name '" +
+                                getServletName() + "'", ex);
+                    }
+                    throw ex;
+                }
+            }
 
 

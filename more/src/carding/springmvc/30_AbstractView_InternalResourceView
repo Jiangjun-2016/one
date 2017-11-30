@@ -1,0 +1,114 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+render：提供
+merged:合并
+
+0.  上一篇博客 springMVC源码分析--视图View（一）中我们介绍了简单介绍了View的结构实现及运行流程，接下来我们介绍一下View的实现类做的处理操作。
+    AbstractView实现了render方法，主要做的操作是将model中的参数和request中的参数全部都放到Request中，然后就转发Request就可以了。
+
+        @Override
+        public void render(Map<String, ?> model, HttpServletRequest request, HttpServletResponse response) throws Exception {
+            if (logger.isTraceEnabled()) {
+                logger.trace("Rendering view with name '" + this.beanName + "' with model " + model +
+                    " and static attributes " + this.staticAttributes);
+            }
+            //将model和request中的参数全部放到mergedModel中
+            Map<String, Object> mergedModel = createMergedOutputModel(model, request, response);
+            //存放头部信息
+            prepareResponse(request, response);
+            //将mergedModel中的参数值放到request中
+            renderMergedOutputModel(mergedModel, getRequestToExpose(request), response);
+        }
+
+    createMergedOutputModel中的操作就是将所有的数据放到mergedModel中。
+            protected Map<String, Object> createMergedOutputModel(Map<String, ?> model, HttpServletRequest request,
+                    HttpServletResponse response) {
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> pathVars = (this.exposePathVariables ?
+                        (Map<String, Object>) request.getAttribute(View.PATH_VARIABLES) : null);
+
+                // Consolidate static and dynamic model attributes.
+                int size = this.staticAttributes.size();
+                size += (model != null ? model.size() : 0);
+                size += (pathVars != null ? pathVars.size() : 0);
+
+                Map<String, Object> mergedModel = new LinkedHashMap<String, Object>(size);
+                mergedModel.putAll(this.staticAttributes);
+                if (pathVars != null) {
+                    mergedModel.putAll(pathVars);
+                }
+                if (model != null) {
+                    mergedModel.putAll(model);
+                }
+
+                // Expose RequestContext?
+                if (this.requestContextAttribute != null) {
+                    mergedModel.put(this.requestContextAttribute, createRequestContext(request, response, mergedModel));
+                }
+
+                return mergedModel;
+            }
+
+    prepareResponse中的操作就是在头部中添加信息。
+            protected void prepareResponse(HttpServletRequest request, HttpServletResponse response) {
+                if (generatesDownloadContent()) {
+                    response.setHeader("Pragma", "private");
+                    response.setHeader("Cache-Control", "private, must-revalidate");
+                }
+            }
+
+    renderMergedOutputModel是在子类中实现的，我们介绍一下我们经常使用的普通jsp源码使用的InternalResourceView
+            @Override
+            protected void renderMergedOutputModel(
+                    Map<String, Object> model, HttpServletRequest request, HttpServletResponse response) throws Exception {
+
+                //把model中的所有数据放到request中
+                exposeModelAsRequestAttributes(model, request);
+
+                exposeHelpers(request);
+
+                //看看是否有跳转页面
+                String dispatcherPath = prepareForRendering(request, response);
+
+                // Obtain a RequestDispatcher for the target resource (typically a JSP).
+                RequestDispatcher rd = getRequestDispatcher(request, dispatcherPath);
+                if (rd == null) {
+                    throw new ServletException("Could not get RequestDispatcher for [" + getUrl() +
+                            "]: Check that the corresponding file exists within your web application archive!");
+                }
+
+                // If already included or response already committed, perform include, else forward.
+                if (useInclude(request, response)) {
+                    response.setContentType(getContentType());
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Including resource [" + getUrl() + "] in InternalResourceView '" + getBeanName() + "'");
+                    }
+                    //加载页面
+                    rd.include(request, response);
+                }
+
+                else {
+                    // Note: The forwarded resource is supposed to determine the content type itself.
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Forwarding to resource [" + getUrl() + "] in InternalResourceView '" + getBeanName() + "'");
+                    }
+                    //转发操作
+                    rd.forward(request, response);
+                }
+            }
+
+    以上代码就完成了springMVC的所有处理操作，springMVC最终的操作就是调用request及response完成请求操作了。
+

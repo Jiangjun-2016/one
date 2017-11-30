@@ -1,0 +1,229 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+render：提供
+merged:合并
+
+0.  在上一篇博客 springMVC源码分析--页面跳转RedirectView（三）中
+    我们看到了在RedirectView跳转时会将跳转之前的请求中的参数保存到fFlashMap中，然后通过FlashManager保存起来。
+
+            protected void renderMergedOutputModel(Map<String, Object> model, HttpServletRequest request,
+                    HttpServletResponse response) throws IOException {
+                //创建跳转链接
+                String targetUrl = createTargetUrl(model, request);
+                targetUrl = updateTargetUrl(targetUrl, model, request, response);
+                //获取原请求所携带的数据
+                FlashMap flashMap = RequestContextUtils.getOutputFlashMap(request);
+                if (!CollectionUtils.isEmpty(flashMap)) {
+                    UriComponents uriComponents = UriComponentsBuilder.fromUriString(targetUrl).build();
+                    flashMap.setTargetRequestPath(uriComponents.getPath());
+                    flashMap.addTargetRequestParams(uriComponents.getQueryParams());
+                    FlashMapManager flashMapManager = RequestContextUtils.getFlashMapManager(request);
+                    if (flashMapManager == null) {
+                        throw new IllegalStateException("FlashMapManager not found despite output FlashMap having been set");
+                    }
+                    //将数据保存起来，作为跳转之后请求的数据使用
+                    flashMapManager.saveOutputFlashMap(flashMap, request, response);
+                }
+                //重定向操作
+                sendRedirect(request, response, targetUrl, this.http10Compatible);
+            }
+
+1.  接下来我们分别认识一下FlashMap和FalshMapManager
+    FlashMapManager是一个接口，定义了保存FlashMap和获取FlashMap的方法
+
+    FlashMapManager
+        AbstractFashMapManager
+            SessionFlashMapMannager
+
+    public interface FlashMapManager {
+
+        //从session中获取flashMap
+        FlashMap retrieveAndUpdate(HttpServletRequest request, HttpServletResponse response);
+
+        //将falshMap保存到session中
+        void saveOutputFlashMap(FlashMap flashMap, HttpServletRequest request, HttpServletResponse response);
+
+    }
+
+    两个实现方法都在AbstractFlashMapManager抽象方法中：
+    saveOutputFlashMap方法实现如下
+
+        @Override
+        public final void saveOutputFlashMap(FlashMap flashMap, HttpServletRequest request, HttpServletResponse response) {
+            if (CollectionUtils.isEmpty(flashMap)) {
+                return;
+            }
+            String path = decodeAndNormalizePath(flashMap.getTargetRequestPath(), request);
+            flashMap.setTargetRequestPath(path);
+            if (logger.isDebugEnabled()) {
+                logger.debug("Saving FlashMap=" + flashMap);
+            }
+            flashMap.startExpirationPeriod(getFlashMapTimeout());
+
+            Object mutex = getFlashMapsMutex(request);
+            if (mutex != null) {
+                synchronized (mutex) {
+                    List<FlashMap> allFlashMaps = retrieveFlashMaps(request);
+                    allFlashMaps = (allFlashMaps != null ? allFlashMaps : new CopyOnWriteArrayList<FlashMap>());
+                    allFlashMaps.add(flashMap);
+                    //flashMap是在子类SessionFlashManager中
+                    updateFlashMaps(allFlashMaps, request, response);
+                }
+            }
+            else {
+                List<FlashMap> allFlashMaps = retrieveFlashMaps(request);
+                allFlashMaps = (allFlashMaps != null ? allFlashMaps : new LinkedList<FlashMap>());
+                allFlashMaps.add(flashMap);
+                //flashMap是在子类SessionFlashManager中
+                updateFlashMaps(allFlashMaps, request, response);
+            }
+        }
+    updateFlashMaps方法的实现机制就是将数据保存的请求的Session中，这样跳转后的请求可以从Session中获取数据，
+    并且所有的实现都保存在同一个Session中，为了防止不同重定向请求的数据相互影响，这边有锁进行处理控制。
+
+        @Override
+        protected void updateFlashMaps(List<FlashMap> flashMaps, HttpServletRequest request, HttpServletResponse response) {
+            WebUtils.setSessionAttribute(request, FLASH_MAPS_SESSION_ATTRIBUTE, (!flashMaps.isEmpty() ? flashMaps : null));
+        }
+    retrieveAndUpdate获取FlashMap的实现如下：
+        @Override
+        public final FlashMap retrieveAndUpdate(HttpServletRequest request, HttpServletResponse response) {
+            List<FlashMap> allFlashMaps = retrieveFlashMaps(request);
+            ........
+        }
+    retrieveFlashMaps中的实现机制就是从Session中获取数据
+        @Override
+        @SuppressWarnings("unchecked")
+        protected List<FlashMap> retrieveFlashMaps(HttpServletRequest request) {
+            HttpSession session = request.getSession(false);
+            return (session != null ? (List<FlashMap>) session.getAttribute(FLASH_MAPS_SESSION_ATTRIBUTE) : null);
+        }
+
+    当重定向的请求在浏览器中重定向之后会进入的DispatcherServlet的doService方法
+        @Override
+        protected void doService(HttpServletRequest request, HttpServletResponse response) throws Exception {
+
+            ........
+
+            //从Session中获取保存的FlashMap中的值
+            FlashMap inputFlashMap = this.flashMapManager.retrieveAndUpdate(request, response);
+            if (inputFlashMap != null) {
+                request.setAttribute(INPUT_FLASH_MAP_ATTRIBUTE, Collections.unmodifiableMap(inputFlashMap));
+            }
+            //将值保存到request中。这样就不需要通过浏览器跳转组装链接来传递参数了
+            request.setAttribute(OUTPUT_FLASH_MAP_ATTRIBUTE, new FlashMap());
+            request.setAttribute(FLASH_MAP_MANAGER_ATTRIBUTE, this.flashMapManager);
+
+            .......
+
+        }
+
+    FlashMap简单来说就是一个HashMap，用于数据保存。
+
+    public final class FlashMap extends HashMap<String, Object> implements Comparable<FlashMap> {
+
+        private String targetRequestPath;
+
+        private final MultiValueMap<String, String> targetRequestParams = new LinkedMultiValueMap<String, String>(4);
+
+        private long expirationTime = -1;
+
+        public void setTargetRequestPath(String path) {
+            this.targetRequestPath = path;
+        }
+        public String getTargetRequestPath() {
+            return this.targetRequestPath;
+        }
+        public FlashMap addTargetRequestParams(MultiValueMap<String, String> params) {
+            if (params != null) {
+                for (String key : params.keySet()) {
+                    for (String value : params.get(key)) {
+                        addTargetRequestParam(key, value);
+                    }
+                }
+            }
+            return this;
+        }
+
+
+        public FlashMap addTargetRequestParam(String name, String value) {
+            if (StringUtils.hasText(name) && StringUtils.hasText(value)) {
+                this.targetRequestParams.add(name, value);
+            }
+            return this;
+        }
+
+        public MultiValueMap<String, String> getTargetRequestParams() {
+            return this.targetRequestParams;
+        }
+
+        public void startExpirationPeriod(int timeToLive) {
+            this.expirationTime = System.currentTimeMillis() + timeToLive * 1000;
+        }
+
+        public void setExpirationTime(long expirationTime) {
+            this.expirationTime = expirationTime;
+        }
+
+        public long getExpirationTime() {
+            return this.expirationTime;
+        }
+
+        public boolean isExpired() {
+            return (this.expirationTime != -1 && System.currentTimeMillis() > this.expirationTime);
+        }
+
+        @Override
+        public int compareTo(FlashMap other) {
+            int thisUrlPath = (this.targetRequestPath != null ? 1 : 0);
+            int otherUrlPath = (other.targetRequestPath != null ? 1 : 0);
+            if (thisUrlPath != otherUrlPath) {
+                return otherUrlPath - thisUrlPath;
+            }
+            else {
+                return other.targetRequestParams.size() - this.targetRequestParams.size();
+            }
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof FlashMap)) {
+                return false;
+            }
+            FlashMap otherFlashMap = (FlashMap) other;
+            return (super.equals(otherFlashMap) &&
+                    ObjectUtils.nullSafeEquals(this.targetRequestPath, otherFlashMap.targetRequestPath) &&
+                    this.targetRequestParams.equals(otherFlashMap.targetRequestParams));
+        }
+
+        @Override
+        public int hashCode() {
+            int result = super.hashCode();
+            result = 31 * result + ObjectUtils.nullSafeHashCode(this.targetRequestPath);
+            result = 31 * result + this.targetRequestParams.hashCode();
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "FlashMap [attributes=" + super.toString() + ", targetRequestPath=" +
+                    this.targetRequestPath + ", targetRequestParams=" + this.targetRequestParams + "]";
+        }
+
+    }
+
