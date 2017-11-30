@@ -1,0 +1,95 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+render：提供
+merged:合并
+Wrapper:包装
+Auth:认证
+
+0.  在网站开发过程中我们一般都会为了防止用户连续提交都会提供验证码的功能，简单来说就是生成一个动态图片，
+    在图片中保存一些校验信息，将校验信息放到session中和用户提交的验证码信息进行对比，
+    如果出现错误则要提示验证码错误。
+    提供一个简单实现的demo。
+
+1.  @Controller
+    @RequestMapping("/auth")
+    public class AuthCodeController {
+
+        private char[] codeSequence = { 'A', '1','B', 'C', '2','D','3', 'E','4', 'F', '5','G','6', 'H', '7','I', '8','J',
+                'K',   '9' ,'L', '1','M',  '2','N',  'P', '3', 'Q', '4', 'R', 'S', 'T', 'U', 'V', 'W',
+                'X', 'Y', 'Z'};
+
+        @RequestMapping("/code")
+        public void getCode(HttpServletResponse response,HttpSession session) throws IOException{
+            int width = 63;
+            int height = 37;
+            Random random = new Random();
+            //设置response头信息
+            //禁止缓存
+            response.setHeader("Pragma", "No-cache");
+            response.setHeader("Cache-Control", "no-cache");
+            response.setDateHeader("Expires", 0);
+
+            //生成缓冲区image类
+            BufferedImage image = new BufferedImage(width, height, 1);
+            //产生image类的Graphics用于绘制操作
+            Graphics g = image.getGraphics();
+            //Graphics类的样式
+            g.setColor(this.getColor(200, 250));
+            g.setFont(new Font("Times New Roman",0,28));
+            g.fillRect(0, 0, width, height);
+            //绘制干扰线
+            for(int i=0;i<40;i++){
+                g.setColor(this.getColor(130, 200));
+                int x = random.nextInt(width);
+                int y = random.nextInt(height);
+                int x1 = random.nextInt(12);
+                int y1 = random.nextInt(12);
+                g.drawLine(x, y, x + x1, y + y1);
+            }
+
+            //绘制字符
+            String strCode = "";
+            for(int i=0;i<4;i++){
+                String rand = String.valueOf(codeSequence[random.nextInt(codeSequence.length)]);
+                strCode = strCode + rand;
+                g.setColor(new Color(20+random.nextInt(110),20+random.nextInt(110),20+random.nextInt(110)));
+                g.drawString(rand, 13*i+6, 28);
+            }
+            //将字符保存到session中用于前端的验证
+            session.setAttribute("authCode", strCode.toLowerCase());
+            g.dispose();
+
+            ImageIO.write(image, "JPEG", response.getOutputStream());
+            response.getOutputStream().flush();
+        }
+
+        public  Color getColor(int fc,int bc){
+            Random random = new Random();
+            if(fc>255)
+                fc = 255;
+            if(bc>255)
+                bc = 255;
+            int r = fc + random.nextInt(bc - fc);
+            int g = fc + random.nextInt(bc - fc);
+            int b = fc + random.nextInt(bc - fc);
+            return new Color(r,g,b);
+        }
+
+    }
+在jsp文件中请求这个图片地址
+    <label><img type="image" src="/auth/code" id="codeImage"  style="cursor:pointer;"/></label>
+
+效果：
+    5SSP

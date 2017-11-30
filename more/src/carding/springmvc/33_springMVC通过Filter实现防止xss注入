@@ -1,0 +1,204 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+render：提供
+merged:合并
+Wrapper:包装
+
+XSS(Cross site script跨站脚本攻击)
+CSRF(Cross-site request forgery跨站请求伪造)
+
+0.  跨站脚本工具（cross 斯特scripting），
+    为不和层叠样式表（cascading style sheets,CSS）的缩写混淆，故将跨站脚本攻击缩写为XSS。
+    恶意攻击者往web页面里插入恶意scriptScript代码，当用户浏览该页之时，
+    嵌入其中Web里面的Script代码会被执行，
+    从而达到恶意攻击用户的目的。
+    防止XSS攻击简单的预防就是对Request请求中的一些参数去掉一些比较敏感的脚本命令。
+    原本是打算通过springMVC的HandlerInterceptor机制来实现的，
+    通过获取request然后对request中的参数进行修改，结果虽然值修改了，但在Controller中获取的数值还是没有修改的。
+    没办法就是要Filter来完成。
+    简单来说就是创建一个新的httpRequest类XsslHttpServletRequestWrapper，然后重写一些get方法（获取参数时对参数进行XSS判断预防）。
+        @WebFilter(filterName="xssMyfilter",urlPatterns="/*")
+        public class MyXssFilter implements Filter{
+
+            @Override
+            public void init(FilterConfig filterConfig) throws ServletException {
+
+            }
+
+            @Override
+            public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+                    throws IOException, ServletException {
+                XsslHttpServletRequestWrapper xssRequest = new XsslHttpServletRequestWrapper((HttpServletRequest)request);
+                chain.doFilter(xssRequest , response);
+            }
+
+            @Override
+            public void destroy() {
+
+            }
+
+        }
+
+    XSS代码的过滤是在XsslHttpServletRequestWrapper中实现的，主要是覆盖实现了getParameter，getParameterValues，getHeader这几个方法，
+    然后对获取的value值进行XSS处理。
+
+        public class XsslHttpServletRequestWrapper extends HttpServletRequestWrapper {
+
+             HttpServletRequest xssRequest = null;
+
+            public XsslHttpServletRequestWrapper(HttpServletRequest request) {
+                super(request);
+                xssRequest = request;
+            }
+
+
+             @Override
+             public String getParameter(String name) {
+                  String value = super.getParameter(replaceXSS(name));
+                    if (value != null) {
+                        value = replaceXSS(value);
+                    }
+                    return value;
+             }
+
+             @Override
+            public String[] getParameterValues(String name) {
+                 String[] values = super.getParameterValues(replaceXSS(name));
+                 if(values != null && values.length > 0){
+                     for(int i =0; i< values.length ;i++){
+                         values[i] = replaceXSS(values[i]);
+                     }
+                 }
+                return values;
+             }
+
+             @Override
+             public String getHeader(String name) {
+
+                    String value = super.getHeader(replaceXSS(name));
+                    if (value != null) {
+                        value = replaceXSS(value);
+                    }
+                    return value;
+                }
+             /**
+              * 去除待带script、src的语句，转义替换后的value值
+              */
+            public static String replaceXSS(String value) {
+                if (value != null) {
+                    try{
+                        value = value.replace("+","%2B");   //'+' replace to '%2B'
+                        value = URLDecoder.decode(value, "utf-8");
+                    }catch(UnsupportedEncodingException e){
+                    }catch(IllegalArgumentException e){
+                }
+
+                    // Avoid null characters
+                    value = value.replaceAll("\0", "");
+
+                    // Avoid anything between script tags
+                    Pattern scriptPattern = Pattern.compile("<script>(.*?)</script>", Pattern.CASE_INSENSITIVE);
+                    value = scriptPattern.matcher(value).replaceAll("");
+
+                    // Avoid anything in a src='...' type of e­xpression
+                    scriptPattern = Pattern.compile("src[\r\n]*=[\r\n]*\\\'(.*?)\\\'", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.DOTALL);
+                    value = scriptPattern.matcher(value).replaceAll("");
+
+                    scriptPattern = Pattern.compile("src[\r\n]*=[\r\n]*\\\"(.*?)\\\"", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.DOTALL);
+                    value = scriptPattern.matcher(value).replaceAll("");
+
+                    // Remove any lonesome </script> tag
+                    scriptPattern = Pattern.compile("</script>", Pattern.CASE_INSENSITIVE);
+                    value = scriptPattern.matcher(value).replaceAll("");
+
+                    // Remove any lonesome <script ...> tag
+                    scriptPattern = Pattern.compile("<script(.*?)>", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.DOTALL);
+                    value = scriptPattern.matcher(value).replaceAll("");
+
+                    // Avoid eval(...) e­xpressions
+                    scriptPattern = Pattern.compile("eval\\((.*?)\\)", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.DOTALL);
+                    value = scriptPattern.matcher(value).replaceAll("");
+
+                    // Avoid e­xpression(...) e­xpressions
+                    scriptPattern = Pattern.compile("e­xpression\\((.*?)\\)", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.DOTALL);
+                    value = scriptPattern.matcher(value).replaceAll("");
+
+                    // Avoid javascript:... e­xpressions
+                    scriptPattern = Pattern.compile("javascript:", Pattern.CASE_INSENSITIVE);
+                    value = scriptPattern.matcher(value).replaceAll("");
+                    // Avoid alert:... e­xpressions
+                    scriptPattern = Pattern.compile("alert", Pattern.CASE_INSENSITIVE);
+                    value = scriptPattern.matcher(value).replaceAll("");
+                    // Avoid onload= e­xpressions
+                    scriptPattern = Pattern.compile("onload(.*?)=", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.DOTALL);
+                    value = scriptPattern.matcher(value).replaceAll("");
+                    scriptPattern = Pattern.compile("vbscript[\r\n| | ]*:[\r\n| | ]*", Pattern.CASE_INSENSITIVE);
+                    value = scriptPattern.matcher(value).replaceAll("");
+                }
+                return filter(value);
+            }
+
+                /**
+                 * 过滤特殊字符
+                 */
+                public static String filter(String value) {
+                    if (value == null) {
+                        return null;
+                    }
+                    StringBuffer result = new StringBuffer(value.length());
+                    for (int i=0; i<value.length(); ++i) {
+                        switch (value.charAt(i)) {
+                            case '<':
+                                result.append("<");
+                                break;
+                            case '>':
+                                result.append(">");
+                                break;
+                            case '"':
+                                result.append(""");
+                                break;
+                            case '\'':
+                                result.append("'");
+                                break;
+                            case '%':
+                                result.append("%");
+                                break;
+                            case ';':
+                                result.append(";");
+                                break;
+                            case '(':
+                                result.append("(");
+                                break;
+                            case ')':
+                                result.append(")");
+                                break;
+                            case '&':
+                                result.append("&");
+                                break;
+                            case '+':
+                                result.append("+");
+                                break;
+                            default:
+                                result.append(value.charAt(i));
+                                break;
+                        }
+                    }
+                    return result.toString();
+                }
+
+        }
+
+    这个并不是解决xss注入好的方式，解决xss注入还是需要在业务中进行处理
+
