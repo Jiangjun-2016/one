@@ -1,0 +1,94 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+
+0.  在开发的一套springMVC系统中是可以使用多个视图的，当然就需要配置多个视图解析器了，
+    ViewResolverComposite简单来说就是使用简单的List来保存你配置使用的视图解析器。
+
+1.  ViewResolverComposite中定义了两个变量：
+    （1）private final List<ViewResolver> viewResolvers = new ArrayList<ViewResolver>();用来存储所有的视图解析器
+    （2）private int order 用来配置视图解析器的使用顺序。
+    ViewResolverComposite的源码如下，其没有多少具体的功能，主要就是一个视图解析器集合。
+
+    public class ViewResolverComposite implements ViewResolver, Ordered, InitializingBean,
+            ApplicationContextAware, ServletContextAware {
+
+        //用来存储所有的视图解析器
+        private final List<ViewResolver> viewResolvers = new ArrayList<ViewResolver>();
+        //设置视图解析器的执行顺序
+        private int order = Ordered.LOWEST_PRECEDENCE;
+
+
+        //设置视图解析器
+        public void setViewResolvers(List<ViewResolver> viewResolvers) {
+            this.viewResolvers.clear();
+            if (!CollectionUtils.isEmpty(viewResolvers)) {
+                this.viewResolvers.addAll(viewResolvers);
+            }
+        }
+
+        //获取所有的视图解析器
+        public List<ViewResolver> getViewResolvers() {
+            return Collections.unmodifiableList(this.viewResolvers);
+        }
+
+        //设置执行顺序
+        public void setOrder(int order) {
+            this.order = order;
+        }
+
+        @Override
+        public int getOrder() {
+            return this.order;
+        }
+
+        @Override
+        public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+            for (ViewResolver viewResolver : this.viewResolvers) {
+                if (viewResolver instanceof ApplicationContextAware) {
+                    ((ApplicationContextAware)viewResolver).setApplicationContext(applicationContext);
+                }
+            }
+        }
+
+        @Override
+        public void setServletContext(ServletContext servletContext) {
+            for (ViewResolver viewResolver : this.viewResolvers) {
+                if (viewResolver instanceof ServletContextAware) {
+                    ((ServletContextAware)viewResolver).setServletContext(servletContext);
+                }
+            }
+        }
+        //初始化视图解析器
+        @Override
+        public void afterPropertiesSet() throws Exception {
+            for (ViewResolver viewResolver : this.viewResolvers) {
+                if (viewResolver instanceof InitializingBean) {
+                    ((InitializingBean) viewResolver).afterPropertiesSet();
+                }
+            }
+        }
+        //生成View对象
+        @Override
+        public View resolveViewName(String viewName, Locale locale) throws Exception {
+            for (ViewResolver viewResolver : this.viewResolvers) {
+                View view = viewResolver.resolveViewName(viewName, locale);
+                if (view != null) {
+                    return view;
+                }
+            }
+            return null;
+        }
+
+    }
