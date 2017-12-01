@@ -1,0 +1,359 @@
+转载（http://blog.csdn.net/qq924862077/）
+Handler:处理
+Detecting:探测
+Invocable:调用
+Container:容器
+redirect:重定向
+Resolver：解决
+Argument：争论
+Aware：知道、察觉
+Binding：结合
+ignore：忽视
+Translator:翻译家
+Composite:混合成的
+IllegalIllegal:非法的
+render：提供
+merged:合并
+Wrapper:包装
+Auth:认证
+
+0.  在网站开发过程中我们一般都会为了防止用户连续提交都会提供验证码的功能，简单来说就是生成一个动态图片，
+    在图片中保存一些校验信息，将校验信息放到session中和用户提交的验证码信息进行对比，
+    如果出现错误则要提示验证码错误。
+    提供一个简单实现的demo。
+
+1.  @Controller
+    @RequestMapping("/auth")
+    public class AuthCodeController {
+
+        private char[] codeSequence = { 'A', '1','B', 'C', '2','D','3', 'E','4', 'F', '5','G','6', 'H', '7','I', '8','J',
+                'K',   '9' ,'L', '1','M',  '2','N',  'P', '3', 'Q', '4', 'R', 'S', 'T', 'U', 'V', 'W',
+                'X', 'Y', 'Z'};
+
+        @RequestMapping("/code")
+        public void getCode(HttpServletResponse response,HttpSession session) throws IOException{
+            int width = 63;
+            int height = 37;
+            Random random = new Random();
+            //设置response头信息
+            //禁止缓存
+            response.setHeader("Pragma", "No-cache");
+            response.setHeader("Cache-Control", "no-cache");
+            response.setDateHeader("Expires", 0);
+
+            //生成缓冲区image类
+            BufferedImage image = new BufferedImage(width, height, 1);
+            //产生image类的Graphics用于绘制操作
+            Graphics g = image.getGraphics();
+            //Graphics类的样式
+            g.setColor(this.getColor(200, 250));
+            g.setFont(new Font("Times New Roman",0,28));
+            g.fillRect(0, 0, width, height);
+            //绘制干扰线
+            for(int i=0;i<40;i++){
+                g.setColor(this.getColor(130, 200));
+                int x = random.nextInt(width);
+                int y = random.nextInt(height);
+                int x1 = random.nextInt(12);
+                int y1 = random.nextInt(12);
+                g.drawLine(x, y, x + x1, y + y1);
+            }
+
+            //绘制字符
+            String strCode = "";
+            for(int i=0;i<4;i++){
+                String rand = String.valueOf(codeSequence[random.nextInt(codeSequence.length)]);
+                strCode = strCode + rand;
+                g.setColor(new Color(20+random.nextInt(110),20+random.nextInt(110),20+random.nextInt(110)));
+                g.drawString(rand, 13*i+6, 28);
+            }
+            //将字符保存到session中用于前端的验证
+            session.setAttribute("authCode", strCode.toLowerCase());
+            g.dispose();
+
+            ImageIO.write(image, "JPEG", response.getOutputStream());
+            response.getOutputStream().flush();
+        }
+
+        public  Color getColor(int fc,int bc){
+            Random random = new Random();
+            if(fc>255)
+                fc = 255;
+            if(bc>255)
+                bc = 255;
+            int r = fc + random.nextInt(bc - fc);
+            int g = fc + random.nextInt(bc - fc);
+            int b = fc + random.nextInt(bc - fc);
+            return new Color(r,g,b);
+        }
+
+    }
+在jsp文件中请求这个图片地址
+    <label><img type="image" src="/auth/code" id="codeImage"  style="cursor:pointer;"/></label>
+
+效果：
+    5SSP
+
+
+**********************************************************************************************************************************
+
+ValidateCode.java 验证码生成类：
+package cn.dsna.util.images;
+
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.util.Random;
+
+import javax.imageio.ImageIO;
+/**
+ * 验证码生成器
+ * @author dsna
+ *
+ */
+public class ValidateCode {
+    // 图片的宽度。
+    private int width = 160;
+    // 图片的高度。
+    private int height = 40;
+    // 验证码字符个数
+    private int codeCount = 5;
+    // 验证码干扰线数
+    private int lineCount = 150;
+    // 验证码
+    private String code = null;
+    // 验证码图片Buffer
+    private BufferedImage buffImg=null;
+
+    private char[] codeSequence = { 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+            'K', 'L', 'M', 'N',  'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
+            'X', 'Y', 'Z',  '1', '2', '3', '4', '5', '6', '7', '8', '9' };
+
+    public  ValidateCode() {
+        this.createCode();
+    }
+
+    /**
+     *
+     * @param width 图片宽
+     * @param height 图片高
+     */
+    public  ValidateCode(int width,int height) {
+        this.width=width;
+        this.height=height;
+        this.createCode();
+    }
+    /**
+     *
+     * @param width 图片宽
+     * @param height 图片高
+     * @param codeCount 字符个数
+     * @param lineCount 干扰线条数
+     */
+    public  ValidateCode(int width,int height,int codeCount,int lineCount) {
+        this.width=width;
+        this.height=height;
+        this.codeCount=codeCount;
+        this.lineCount=lineCount;
+        this.createCode();
+    }
+
+    public void createCode() {
+        int x = 0,fontHeight=0,codeY=0;
+        int red = 0, green = 0, blue = 0;
+
+        x = width / (codeCount +2);//每个字符的宽度
+        fontHeight = height - 2;//字体的高度
+        codeY = height - 4;
+
+        // 图像buffer
+        buffImg = new BufferedImage(width, height,BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = buffImg.createGraphics();
+        // 生成随机数
+        Random random = new Random();
+        // 将图像填充为白色
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, width, height);
+        // 创建字体
+        ImgFontByte imgFont=new ImgFontByte();
+        Font font =imgFont.getFont(fontHeight);
+        g.setFont(font);
+
+        for (int i = 0; i < lineCount; i++) {
+            int xs = random.nextInt(width);
+            int ys = random.nextInt(height);
+            int xe = xs+random.nextInt(width/8);
+            int ye = ys+random.nextInt(height/8);
+            red = random.nextInt(255);
+            green = random.nextInt(255);
+            blue = random.nextInt(255);
+            g.setColor(new Color(red, green, blue));
+            g.drawLine(xs, ys, xe, ye);
+        }
+
+        // randomCode记录随机产生的验证码
+        StringBuffer randomCode = new StringBuffer();
+        // 随机产生codeCount个字符的验证码。
+        for (int i = 0; i < codeCount; i++) {
+            String strRand = String.valueOf(codeSequence[random.nextInt(codeSequence.length)]);
+            // 产生随机的颜色值，让输出的每个字符的颜色值都将不同。
+            red = random.nextInt(255);
+            green = random.nextInt(255);
+            blue = random.nextInt(255);
+            g.setColor(new Color(red, green, blue));
+            g.drawString(strRand, (i + 1) * x, codeY);
+            // 将产生的四个随机数组合在一起。
+            randomCode.append(strRand);
+        }
+        // 将四位数字的验证码保存到Session中。
+        code=randomCode.toString();
+    }
+
+    public void write(String path) throws IOException {
+        OutputStream sos = new FileOutputStream(path);
+            this.write(sos);
+    }
+
+    public void write(OutputStream sos) throws IOException {
+            ImageIO.write(buffImg, "png", sos);
+            sos.close();
+    }
+    public BufferedImage getBuffImg() {
+        return buffImg;
+    }
+
+    public String getCode() {
+        return code;
+    }
+}
+
+ImgFontByte.java
+
+package cn.dsna.util.images;
+import java.io.ByteArrayInputStream;
+import java.awt.*;
+/**
+ * ttf字体文件
+ * @author dsna
+ *
+ */
+public class ImgFontByte {
+    public Font getFont(int fontHeight){
+        try {
+            Font baseFont = Font.createFont(Font.TRUETYPE_FONT, new ByteArrayInputStream(hex2byte(getFontByteStr())));
+            return baseFont.deriveFont(Font.PLAIN, fontHeight);
+        } catch (Exception e) {
+            return new Font("Arial",Font.PLAIN, fontHeight);
+        }
+    }
+
+    private  byte[] hex2byte(String str) {
+        if (str == null)
+            return null;
+        str = str.trim();
+        int len = str.length();
+        if (len == 0 || len % 2 == 1)
+            return null;
+
+        byte[] b = new byte[len / 2];
+        try {
+            for (int i = 0; i < str.length(); i += 2) {
+                b[i / 2] = (byte) Integer
+                        .decode("0x" + str.substring(i, i + 2)).intValue();
+            }
+            return b;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    /**
+      * ttf字体文件的十六进制字符串
+      * @return
+      */
+    private String getFontByteStr(){ return null;
+        return str;//字符串太长 在附件中找
+    }
+}
+
+
+ValidateCodeServlet.java Servlet调用方法：
+package cn.dsna.util.images;
+
+import java.io.IOException;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+
+public class ValidateCodeServlet extends HttpServlet {
+    private static final long serialVersionUID = 1L;
+
+    @Override
+    protected void doGet(HttpServletRequest reqeust,
+            HttpServletResponse response) throws ServletException, IOException {
+        // 设置响应的类型格式为图片格式
+        response.setContentType("image/jpeg");
+        //禁止图像缓存。
+        response.setHeader("Pragma", "no-cache");
+        response.setHeader("Cache-Control", "no-cache");
+        response.setDateHeader("Expires", 0);
+
+        HttpSession session = reqeust.getSession();
+
+        ValidateCode vCode = new ValidateCode(120,40,5,100);
+        session.setAttribute("code", vCode.getCode());
+        vCode.write(response.getOutputStream());
+    }
+    /**
+     * web.xml 添加servlet
+        <servlet>
+            <servlet-name>validateCodeServlet</servlet-name>
+            <servlet-class>cn.dsna.util.images.ValidateCodeServlet</servlet-class>
+        </servlet>
+        <servlet-mapping>
+            <servlet-name>validateCodeServlet</servlet-name>
+            <url-pattern>*.images</url-pattern>
+        </servlet-mapping>
+
+    在地址栏输入XXX/dsna.images 测试
+     */
+
+}
+测试类：ValidateCodeTest.java
+package cn.dsna.util.images;
+
+import java.io.IOException;
+import java.util.Date;
+
+public class ValidateCodeTest {
+
+    /**
+     * @param args
+     */
+    public static void main(String[] args) {
+        ValidateCode vCode = new ValidateCode(120,40,5,100);
+        try {
+            String path="D:/t/"+new Date().getTime()+".png";
+            System.out.println(vCode.getCode()+" >"+path);
+            vCode.write(path);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+}
+
+web.xml 配置：
+<servlet>
+    <servlet-name>validateCodeServlet</servlet-name>
+    <servlet-class>cn.dsna.util.images.ValidateCodeServlet</servlet-class>
+</servlet>
+<servlet-mapping>
+    <servlet-name>validateCodeServlet</servlet-name>
+    <url-pattern>*.images</url-pattern>
+</servlet-mapping>
