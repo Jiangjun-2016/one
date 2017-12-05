@@ -1,0 +1,32 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+
+0.
+public interface StatementHandler {
+
+    Statement prepare(Connection connection)
+        throws SQLException;
+
+    void parameterize(Statement statement)
+        throws SQLException;
+
+    void batch(Statement statement)
+        throws SQLException;
+
+    int update(Statement statement)
+        throws SQLException;
+
+    <E> List<E> query(Statement statement, ResultHandler resultHandler)
+        throws SQLException;
+
+    BoundSql getBoundSql();
+
+    ParameterHandler getParameterHandler();
+
+}
+
+
