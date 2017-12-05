@@ -1,0 +1,123 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+
+0.  在利用spring管理mybatis时可以同时配置多个数据源，并且数据源可以随时切换，但在多线程中多数据源的事务需要一定的配置。
+  多数据源配置：
+     <bean id="postgresqlDataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+         <property name="driverClassName" value="${jdbc.postgresql.driver}"/>
+         <property name="url" value="${jdbc.postgresql.url}"/>
+         <property name="username" value="${jdbc.postgresql.username}"/>
+         <property name="password" value="${jdbc.postgresql.password}"/>
+         <property name="initialSize" value="${jdbc.initialSize}"/>
+         <property name="minIdle" value="${jdbc.minIdle}"/>
+         <property name="maxIdle" value="${jdbc.maxIdle}"/>
+         <property name="maxActive" value="${jdbc.maxActive}"/>
+         <property name="maxWait" value="${jdbc.maxWait}"/>
+         <property name="defaultAutoCommit" value="${jdbc.defaultAutoCommit}"/>
+         <property name="removeAbandoned" value="${jdbc.removeAbandoned}"/>
+         <property name="removeAbandonedTimeout" value="${jdbc.removeAbandonedTimeout}"/>
+         <property name="testWhileIdle" value="${jdbc.testWhileIdle}"/>
+         <property name="timeBetweenEvictionRunsMillis" value="${jdbc.timeBetweenEvictionRunsMillis}"/>
+         <property name="numTestsPerEvictionRun" value="${jdbc.numTestsPerEvictionRun}"/>
+         <property name="minEvictableIdleTimeMillis" value="${jdbc.minEvictableIdleTimeMillis}"/>
+     </bean>
+     <bean id="oracleDataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+         <property name="driverClassName" value="${jdbc.oracle.driver}"/>
+         <property name="url" value="${jdbc.oracle.url}"/>
+         <property name="username" value="${jdbc.oracle.username}"/>
+         <property name="password" value="${jdbc.oracle.password}"/>
+         <property name="initialSize" value="${jdbc.initialSize}"/>
+         <property name="minIdle" value="${jdbc.minIdle}"/>
+         <property name="maxIdle" value="${jdbc.maxIdle}"/>
+         <property name="maxActive" value="${jdbc.maxActive}"/>
+         <property name="maxWait" value="${jdbc.maxWait}"/>
+         <property name="defaultAutoCommit" value="${jdbc.defaultAutoCommit}"/>
+         <property name="removeAbandoned" value="${jdbc.removeAbandoned}"/>
+         <property name="removeAbandonedTimeout" value="${jdbc.removeAbandonedTimeout}"/>
+         <property name="testWhileIdle" value="${jdbc.testWhileIdle}"/>
+         <property name="timeBetweenEvictionRunsMillis" value="${jdbc.timeBetweenEvictionRunsMillis}"/>
+         <property name="numTestsPerEvictionRun" value="${jdbc.numTestsPerEvictionRun}"/>
+         <property name="minEvictableIdleTimeMillis" value="${jdbc.minEvictableIdleTimeMillis}"/>
+     </bean>
+     <bean id="mysqlDataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+         <property name="driverClassName" value="${jdbc.mysql.driver}"/>
+         <property name="url" value="${jdbc.mysql.url}"/>
+         <property name="username" value="${jdbc.mysql.username}"/>
+         <property name="password" value="${jdbc.mysql.password}"/>
+         <property name="initialSize" value="${jdbc.initialSize}"/>
+         <property name="minIdle" value="${jdbc.minIdle}"/>
+         <property name="maxIdle" value="${jdbc.maxIdle}"/>
+         <property name="maxActive" value="${jdbc.maxActive}"/>
+         <property name="maxWait" value="${jdbc.maxWait}"/>
+         <property name="defaultAutoCommit" value="${jdbc.defaultAutoCommit}"/>
+         <property name="removeAbandoned" value="${jdbc.removeAbandoned}"/>
+         <property name="removeAbandonedTimeout" value="${jdbc.removeAbandonedTimeout}"/>
+         <property name="testWhileIdle" value="${jdbc.testWhileIdle}"/>
+         <property name="timeBetweenEvictionRunsMillis" value="${jdbc.timeBetweenEvictionRunsMillis}"/>
+         <property name="numTestsPerEvictionRun" value="${jdbc.numTestsPerEvictionRun}"/>
+         <property name="minEvictableIdleTimeMillis" value="${jdbc.minEvictableIdleTimeMillis}"/>
+     </bean>
+
+     <bean id="dataSource" class="orm.user.datasource.DataSource">
+          <property name="targetDataSources">
+                 <map key-type="java.lang.String">
+                     <entry key="postgres" value-ref="postgresqlDataSource" />
+                     <entry key="oracle" value-ref="oracleDataSource" />
+                     <entry key="mysql" value-ref="mysqlDataSource"></entry>
+                 </map>
+             </property>
+          <property name="defaultTargetDataSource" ref="postgresqlDataSource"></property>
+     </bean>
+
+     <!-- mybatis 配置 -->
+     <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <property name="dataSource" ref="dataSource" />
+        <property name="databaseIdProvider" ref="databaseIdProvider" />
+        <property name="configLocation" value="classpath:mybatis-config.xml" />
+
+     </bean>
+
+      <bean id="sqlSessionTemplate" class="org.mybatis.spring.SqlSessionTemplate">
+         <constructor-arg ref="sqlSessionFactory" />
+      </bean>
+
+1.  多数据源存在的问题是各个数据库类型直接的sql语句并不相同，比如mysql和postgresql的分页语句就不同，
+    mybatis提供了一种简单的方法，首先你需要根据数据库类型写对应的sql语句，
+    mybatis的VendorDatabaseIdProvider会根据数据源的类型选择对应的sql语句进行执行。
+    如下配置：
+    <bean id="vendorProperties" class="org.springframework.beans.factory.config.PropertiesFactoryBean">
+        <property name="properties">
+                <props>
+                    <prop key="SQL Server">sqlserver</prop>
+                    <prop key="DB2">db2</prop>
+                    <prop key="Oracle">oracle</prop>
+                    <prop key="MySQL">mysql</prop>
+                    <prop key="PostgreSQL">postgresql</prop>
+                </props>
+            </property>
+    </bean>
+    <bean id="databaseIdProvider" class="org.apache.ibatis.mapping.VendorDatabaseIdProvider">
+        <property name="properties" ref="vendorProperties"/>
+    </bean>
+
+2.  在mybatis的mapper配置文件中进行 "_databaseId" 判断，是哪种数据源类型就使用相对应的sql语句
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+      <mapper namespace="orm.user">
+         <select id="getUser"  resultType="orm.user.entity.User">
+
+         <if test="_databaseId == 'mysql'">
+             select * from tbl_user  order by id desc limit 5
+         </if>
+
+         <if test="_databaseId == 'postgresql'">
+             select * from tbl_user  order by id desc  limit 1 offset 0
+         </if>
+
+         </select>
+
+    </mapper>
