@@ -1,0 +1,130 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  Mybatis接口编程示例
+
+（1）首先定义接口编程需要的接口及其方法
+    public interface IUserMapper {
+
+        public User getById(int id);//接口方法，不需要实现
+    }
+
+（2）创建mybatis的mapper文件，其中namespace的值为接口的完整类名
+    <mapper namespace="com.tianjunwei.learn.learn2.IUserMapper">//接口完整类名
+
+         <select id="getById" parameterType="int"
+             resultType="com.tianjunwei.learn.learn1.entity.User">
+            select * from users where id=#{id}
+         </select>
+
+     </mapper>
+
+（3）创建接口调用操作
+    public class Learn2Main {
+
+        public static void main(String [] args){
+
+            String resource = "learn/mybatis-config.xml";
+            InputStream is = Learn1Main.class.getClassLoader().getResourceAsStream(resource);
+            SqlSessionFactory sessionFactory = new SqlSessionFactoryBuilder().build(is);
+            SqlSession session = sessionFactory.openSession();
+            IUserMapper userMapper = session.getMapper(IUserMapper.class);//获取接口，已经是代理接口
+            userMapper.getById(1);
+            RowBounds rowBounds = new RowBounds(2, 4);//接口分页编程
+            System.out.println(userMapper.page(rowBounds).size());
+        }
+    }
+
+    Mybatis接口编程相关的类主要有MapperProxyFactory、MapperProxy、MapperMethod和MapperRegister四个类：
+    MapperProxyFactory：通过类名我们可以猜到这是一个MapperProxy的工厂类，用于创建MapperProxy的，
+    通过函数newInstance(SqlSession sqlSession)来创建MapperProxy的代理类。
+    源码如下：
+    //这个类赋值创建具体mapper接口代理对象的工厂
+    public class MapperProxyFactory<T> {
+
+      //具体Mapper接口的class对象
+      private final Class<T> mapperInterface;
+      //该接口下面的缓存，key是方法对象，value是对接口中方法对象的封装
+      private final Map<Method, MapperMethod> methodCache = new ConcurrentHashMap<Method, MapperMethod>();
+
+      public MapperProxyFactory(Class<T> mapperInterface) {
+        this.mapperInterface = mapperInterface;
+      }
+
+      public Class<T> getMapperInterface() {
+        return mapperInterface;
+      }
+
+      public Map<Method, MapperMethod> getMethodCache() {
+        return methodCache;
+      }
+
+      @SuppressWarnings("unchecked")
+      protected T newInstance(MapperProxy<T> mapperProxy) {
+        //创建一个代理类并返回
+        return (T) Proxy.newProxyInstance(mapperInterface.getClassLoader(), new Class[] { mapperInterface }, mapperProxy);
+      }
+
+      public T newInstance(SqlSession sqlSession) {
+        //在这里创建MapperProxy对象，这个类实现了JDK的动态代理接口 InvocationHandler
+        final MapperProxy<T> mapperProxy = new MapperProxy<T>(sqlSession, mapperInterface, methodCache);
+        //调用上面的方法，返回一个接口的代理类
+        return newInstance(mapperProxy);
+      }
+
+    }
+
+    MapperProxy：通过类名可以猜到这个类为一个代理类，它实现了JDK动态代理接口InvocationHandler，通过查看源码发现它又不像一个真正的代理类，
+    它一般不会真正执行被代理类的函数方法，只是在执行被代理类函数方法时来执行MapperMethod类的execute方法，具体逻辑详看invoke函数
+    源码如下：
+    //实现了JDK动态代理的接口，InvocationHandler
+    //在invoke方法中实现了代理方法调用的细节
+    public class MapperProxy<T> implements InvocationHandler, Serializable {
+
+      private static final long serialVersionUID = -6424540398559729838L;
+      //sqlSession
+      private final SqlSession sqlSession;
+      //接口的类型对象
+      private final Class<T> mapperInterface;
+      //接口中方法的缓存，由MapperProxyFactory传递过来
+      private final Map<Method, MapperMethod> methodCache;
+
+      //构造函数
+      public MapperProxy(SqlSession sqlSession, Class<T> mapperInterface, Map<Method, MapperMethod> methodCache) {
+        this.sqlSession = sqlSession;
+        this.mapperInterface = mapperInterface;
+        this.methodCache = methodCache;
+      }
+      //接口代理对象所有的方法调用都会调用该方法
+      @Override
+      public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        //判断是不是基础方法比如toString、hashCode等，这些方法直接调用不需要处理
+        if (Object.class.equals(method.getDeclaringClass())) {
+          try {
+            return method.invoke(this, args);
+          } catch (Throwable t) {
+            throw ExceptionUtil.unwrapThrowable(t);
+          }
+        }
+        //进行缓存
+        final MapperMethod mapperMethod = cachedMapperMethod(method);
+        //调用mapperMethod.execute 核心的地方就在这个方法里，这个方法对才是真正对SqlSession进行的包装调用
+        return mapperMethod.execute(sqlSession, args);
+      }
+      //缓存处理
+      private MapperMethod cachedMapperMethod(Method method) {
+        MapperMethod mapperMethod = methodCache.get(method);
+        if (mapperMethod == null) {
+          mapperMethod = new MapperMethod(mapperInterface, method, sqlSession.getConfiguration());
+          methodCache.put(method, mapperMethod);
+        }
+        return mapperMethod;
+      }
+
+    }
+

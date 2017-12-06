@@ -1,0 +1,228 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  我们首先介绍一下Mybatis插件相关的几个类，并对源码进行了简单的分析。
+    Mybatis插件相关的接口或类有：Intercept、InterceptChain、Plugin和Invocation，这几个接口或类实现了整个Mybatis插件流程。
+
+1.  Interceptor：一个接口，是实现自己功能需要实现的接口
+    源码如下：
+    public interface Interceptor {
+
+      //在此方法中实现自己需要的功能，最后执行invocation.proceed()方法，实际就是调用method.invoke(target, args)方法，调用代理类
+      Object intercept(Invocation invocation) throws Throwable;
+
+      //这个方法是将target生成代理类
+      Object plugin(Object target);
+      //在xml中注册Intercept是配置一些属性
+      void setProperties(Properties properties);
+
+    }
+
+    InterceptorChain：有一个List<Interceptor> interceptors变量，来保存所有Interceptor的实现类
+    源码如下：
+    public class InterceptorChain {
+
+      //插件拦截器链
+      private final List<Interceptor> interceptors = new ArrayList<Interceptor>();
+
+      //把target变成代理类，这样在运行target方法之前需要运行Plugin的invoke方法
+      public Object pluginAll(Object target) {
+        for (Interceptor interceptor : interceptors) {
+          target = interceptor.plugin(target);
+        }
+        return target;
+      }
+
+      public void addInterceptor(Interceptor interceptor) {
+        interceptors.add(interceptor);
+      }
+
+      public List<Interceptor> getInterceptors() {
+        return Collections.unmodifiableList(interceptors);
+      }
+
+    }
+
+    Invocation：一个比较简单的类，主要的功能就是根据构造函数类执行代理类
+    源码如下：
+    public class Invocation {
+
+      private Object target;
+      private Method method;
+      private Object[] args;
+
+      public Invocation(Object target, Method method, Object[] args) {
+        this.target = target;
+        this.method = method;
+        this.args = args;
+      }
+
+      public Object getTarget() {
+        return target;
+      }
+
+      public Method getMethod() {
+        return method;
+      }
+
+      public Object[] getArgs() {
+        return args;
+      }
+      //其实mybatis的Interceptor最终还是调用的method.invoke方法
+      public Object proceed() throws InvocationTargetException, IllegalAccessException {
+        return method.invoke(target, args);
+      }
+
+    }
+
+    Plugin：Mybatis插件的核心类，它实现了代理接口InvocationHandler，是一个代理类
+    源码详解如下：
+    //这个类是Mybatis拦截器的核心,大家可以看到该类继承了InvocationHandler
+    //又是JDK动态代理机制
+    public class Plugin implements InvocationHandler {
+
+      //目标对象
+      private Object target;
+      //拦截器
+      private Interceptor interceptor;
+      //记录需要被拦截的类与方法
+      private Map<Class<?>, Set<Method>> signatureMap;
+
+      private Plugin(Object target, Interceptor interceptor, Map<Class<?>, Set<Method>> signatureMap) {
+        this.target = target;
+        this.interceptor = interceptor;
+        this.signatureMap = signatureMap;
+      }
+
+      //一个静态方法,对一个目标对象进行包装，生成代理类。
+      public static Object wrap(Object target, Interceptor interceptor) {
+        //首先根据interceptor上面定义的注解 获取需要拦截的信息
+        Map<Class<?>, Set<Method>> signatureMap = getSignatureMap(interceptor);
+        Class<?> type = target.getClass();
+        Class<?>[] interfaces = getAllInterfaces(type, signatureMap);
+        //如果长度为>0 则返回代理类 否则不做处理
+        if (interfaces.length > 0) {
+          //创建JDK动态代理对象
+          return Proxy.newProxyInstance(
+              type.getClassLoader(),
+              interfaces,
+              new Plugin(target, interceptor, signatureMap));
+        }
+        return target;
+      }
+
+      //在执行Executor、ParameterHandler、ResultSetHandler和StatementHandler的实现类的方法时会调用这个方法
+      @Override
+      public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        try {
+          //通过method参数定义的类 去signatureMap当中查询需要拦截的方法集合
+          Set<Method> methods = signatureMap.get(method.getDeclaringClass());
+          //判断是否是需要拦截的方法，如果需要拦截的话就执行实现的Interceptor的intercept方法，执行完之后还是会执行method.invoke方法，不过是放到interceptor实现类中去实现了
+          if (methods != null && methods.contains(method)) {
+            return interceptor.intercept(new Invocation(target, method, args));
+          }
+          //不拦截 直接通过目标对象调用方法
+          return method.invoke(target, args);
+        } catch (Exception e) {
+          throw ExceptionUtil.unwrapThrowable(e);
+        }
+      }
+      //根据拦截器接口（Interceptor）实现类上面的注解获取相关信息
+      private static Map<Class<?>, Set<Method>> getSignatureMap(Interceptor interceptor) {
+        //获取注解信息
+        Intercepts interceptsAnnotation = interceptor.getClass().getAnnotation(Intercepts.class);
+        // issue #251
+        //为空则抛出异常
+        if (interceptsAnnotation == null) {
+          throw new PluginException("No @Intercepts annotation was found in interceptor " + interceptor.getClass().getName());
+        }
+        //获得Signature注解信息
+        Signature[] sigs = interceptsAnnotation.value();
+        Map<Class<?>, Set<Method>> signatureMap = new HashMap<Class<?>, Set<Method>>();
+        //循环注解信息
+        for (Signature sig : sigs) {
+          //根据Signature注解定义的type信息去signatureMap当中查询需要拦截方法的集合
+          Set<Method> methods = signatureMap.get(sig.type());
+          //第一次肯定为null 就创建一个并放入signatureMap
+          if (methods == null) {
+            methods = new HashSet<Method>();
+            signatureMap.put(sig.type(), methods);
+          }
+          try {
+            //找到sig.type当中定义的方法 并加入到集合
+            Method method = sig.type().getMethod(sig.method(), sig.args());
+            methods.add(method);
+          } catch (NoSuchMethodException e) {
+            throw new PluginException("Could not find method on " + sig.type() + " named " + sig.method() + ". Cause: " + e, e);
+          }
+        }
+        return signatureMap;
+      }
+      //根据对象类型与signatureMap获取接口信息
+      private static Class<?>[] getAllInterfaces(Class<?> type, Map<Class<?>, Set<Method>> signatureMap) {
+        Set<Class<?>> interfaces = new HashSet<Class<?>>();
+        //循环type类型的接口信息 如果该类型存在与signatureMap当中则加入到set当中去
+        while (type != null) {
+          for (Class<?> c : type.getInterfaces()) {
+            if (signatureMap.containsKey(c)) {
+              interfaces.add(c);
+            }
+          }
+          type = type.getSuperclass();
+        }
+        //转换为数组返回
+        return interfaces.toArray(new Class<?>[interfaces.size()]);
+      }
+
+    }
+
+    对Mybatis插件有一定了解的人应该知道，插件拦截的类是Executor、ParameterHandler、ResultSetHandler和StatementHandler的实现类，为什么会这样呢？
+    在Configuration类中看一下代码就明白了，
+    可以看到在初始化Executor、ParameterHandler、ResultSetHandler和StatementHandler都会调用interceptorChain.pluginAll（）这个函数，
+    其实这样之后各个接口的实现类就被代理类生成为目标类了。
+    public ParameterHandler newParameterHandler(MappedStatement mappedStatement, Object parameterObject, BoundSql boundSql) {
+       ParameterHandler parameterHandler = mappedStatement.getLang().createParameterHandler(mappedStatement, parameterObject, boundSql);
+       parameterHandler = (ParameterHandler) interceptorChain.pluginAll(parameterHandler);
+       return parameterHandler;
+     }
+
+     public ResultSetHandler newResultSetHandler(Executor executor, MappedStatement mappedStatement, RowBounds rowBounds, ParameterHandler parameterHandler,
+         ResultHandler resultHandler, BoundSql boundSql) {
+       ResultSetHandler resultSetHandler = new DefaultResultSetHandler(executor, mappedStatement, parameterHandler, resultHandler, boundSql, rowBounds);
+       resultSetHandler = (ResultSetHandler) interceptorChain.pluginAll(resultSetHandler);
+       return resultSetHandler;
+     }
+
+     public StatementHandler newStatementHandler(Executor executor, MappedStatement mappedStatement, Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler, BoundSql boundSql) {
+       StatementHandler statementHandler = new RoutingStatementHandler(executor, mappedStatement, parameterObject, rowBounds, resultHandler, boundSql);
+       statementHandler = (StatementHandler) interceptorChain.pluginAll(statementHandler);
+       return statementHandler;
+     }
+
+     public Executor newExecutor(Transaction transaction) {
+       return newExecutor(transaction, defaultExecutorType);
+     }
+
+     public Executor newExecutor(Transaction transaction, ExecutorType executorType) {
+       executorType = executorType == null ? defaultExecutorType : executorType;
+       executorType = executorType == null ? ExecutorType.SIMPLE : executorType;
+       Executor executor;
+       if (ExecutorType.BATCH == executorType) {
+         executor = new BatchExecutor(this, transaction);
+       } else if (ExecutorType.REUSE == executorType) {
+         executor = new ReuseExecutor(this, transaction);
+       } else {
+         executor = new SimpleExecutor(this, transaction);
+       }
+       if (cacheEnabled) {
+         executor = new CachingExecutor(executor);
+       }
+       executor = (Executor) interceptorChain.pluginAll(executor);
+       return executor;
+     }
+

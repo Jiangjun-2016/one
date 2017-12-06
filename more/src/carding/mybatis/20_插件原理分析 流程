@@ -1,0 +1,129 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  在上一篇中Mybatis插件原理分析（一）中我们主要介绍了一下Mybatis插件相关的几个类的源码，并对源码进行了一些解释，
+    接下来我们通过一个简单的插件实现来对Mybatis插件的运行流程进行分析。
+
+一、简单的插件MyInterceptor，源码如下：
+    /**
+     * 实现Interceptor的类必须使用注解@Intercepts，Plugin类中的getSignatureMap函数就是来解析这个注解
+     * 获得注解中的相关信息，比如拦截的method，拦截的接口实现类，以及method的函数参数等
+     */
+    @Intercepts( {
+    @Signature(method = "query", type = Executor.class, args = {
+    MappedStatement.class, Object.class, RowBounds.class,
+    ResultHandler.class })})
+    public class MyInterceptor implements Interceptor {
+
+        //这个函数的最终结果是调用invocation.proceed()方法，调用目标类的method.invoke方法
+        @Override
+        public Object intercept(Invocation invocation) throws Throwable {
+            return invocation.proceed();
+        }
+
+        //这个方法的目的就是将目标类通过代理类Plugin的wrap方法来生成目标类
+        @Override
+        public Object plugin(Object target) {
+
+            return Plugin.wrap(target, this);
+        }
+
+        @Override
+        public void setProperties(Properties properties) {
+            // TODO Auto-generated method stub
+
+        }
+
+    }
+
+二、mybatis的配文件中添加如下配置：
+    <plugins>
+          <plugin interceptor="com.tianjunwei.MyInterceptor"></plugin>
+    </plugins>
+
+这样就完成了一个简单插件的实现工作。
+
+三、运行流程
+    （1）在mybatis启动阶段，在Configuration类中的Executor、ParameterHandler、ResultSetHandler和StatementHandler的实现类初始化过程中会调用如下进行初始化：
+    resultSetHandler = (ResultSetHandler) interceptorChain.pluginAll(resultSetHandler);
+
+    在InterceptorChain类中调用pluginAll函数，会调用所有已经实现的Interceptor，例如我们刚实现的MyInterceptor类的plugin方法
+        public Object pluginAll(Object target) {
+            for (Interceptor interceptor : interceptors) {
+              target = interceptor.plugin(target);
+            }
+            return target;
+        }
+
+    MyInterceptor类中的plugin方法其实调用的是Plugin的wrap函数，wrap函数是用来生代理类的目标类的
+        //这个方法的目的就是将目标类通过代理类Plugin的wrap方法来生成目标类
+        @Override
+        public Object plugin(Object target) {
+
+            return Plugin.wrap(target, this);
+        }
+
+    Plugin类中的wrap实现如下，其目的就是生成目标类，这样Executor、ParameterHandler、ResultSetHandler和StatementHandler的实现类都是目标类
+          //一个静态方法,对一个目标对象进行包装，生成目标类。
+          public static Object wrap(Object target, Interceptor interceptor) {
+                //首先根据interceptor上面定义的注解 获取需要拦截的信息
+                Map<Class<?>, Set<Method>> signatureMap = getSignatureMap(interceptor);
+                Class<?> type = target.getClass();
+                Class<?>[] interfaces = getAllInterfaces(type, signatureMap);
+                //如果长度为>0 则返回代理类 否则不做处理
+                if (interfaces.length > 0) {
+                  //创建JDK动态代理对象
+                  return Proxy.newProxyInstance(
+                      type.getClassLoader(),
+                      interfaces,
+                      new Plugin(target, interceptor, signatureMap));
+                }
+                return target;
+          }
+
+    我们以Executor的实现类来说明，当调用Executor的query方法是，根据代理类机制会调用Plugin的invoke方法
+    在invoke方法中我们可以看，首先会判断目标类调用的方法是否是我们在实现的MyInterceptor的注解中进行了配置，
+    如果配置了则会调用interceptor.intercept(new Invocation(target, method, args));，
+    这样的话就是调用的MyInterceptor的intercept方法，
+    否则则直接调用return method.invoke(target, args);，
+
+        //在执行Executor、ParameterHandler、ResultSetHandler和StatementHandler的实现类的方法时会调用这个方法
+         @Override
+         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+               try {
+                    //通过method参数定义的类 去signatureMap当中查询需要拦截的方法集合
+                     Set<Method> methods = signatureMap.get(method.getDeclaringClass());
+                    //判断是否是需要拦截的方法，如果需要拦截的话就执行实现的Interceptor的intercept方法，
+                    执行完之后还是会执行method.invoke方法，不过是放到interceptor实现类中去实现了
+                     if (methods != null && methods.contains(method)) {
+                       return interceptor.intercept(new Invocation(target, method, args));
+                     }
+                    //不拦截 直接通过目标对象调用方法
+                     return method.invoke(target, args);
+               } catch (Exception e) {
+                    throw ExceptionUtil.unwrapThrowable(e);
+               }
+         }
+
+    因为在MyInterceptor的plugin方法中已经把MyInterceptor作为参数赋值给Plugin了，代码如下
+        //这个方法的目的就是将目标类通过代理类Plugin的wrap方法来生成目标类
+        @Override
+        public Object plugin(Object target) {
+
+            return Plugin.wrap(target, this);
+        }
+
+    总结：
+    Mybatis的插件的原理就是对Executor、ParameterHandler、ResultSetHandler和StatementHandler的实现类通过Plugin代理来生成目标类，
+    并且关联生成的目标类与实现的Interceptor类，
+    这样在调用Executor、ParameterHandler、ResultSetHandler和StatementHandler的实现类方法时会调用Plugin类中的invoke方法，
+    在调用invoke方法时会进行判断这个实现类是否需要我们实现的MyInterceptor来处理，
+    如果是会调用MyInterceptor的interceptor方法，进行一些处理之后调用Invocation的proceed方法，
+    其实际处理方法也是调用method.invoke方法，如果不需要MyInterceptor处理时则直接调用method.invoke方法，
+    Mybatis巧妙的利用的JDK的代理机制，实现了对目标类和方法在调用之前的一些处理，提高了整个框架的灵活性。
+

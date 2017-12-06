@@ -1,0 +1,28 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+
+0.  在mybatis的mapper文件中，对于传递的参数我们一般是使用#和$来获取参数值。
+    当使用#时变量是占位符，就是一般我们使用java jdbc的PrepareStatement时的占位符？，所有可以防止sql注入
+    当使用$时，变量就是直接追加在sql中，一般会有sql注入问题。
+
+    一个问题就是：在使用mybatis传递时间变量时，如果通过#方式获取变量值，可能会出现与数据库的字段的类型不匹配错误，一般我们只需要获取一个String即可。
+    所有可以通过$来获取时间值。
+    如下情况sql语句可能会报错：
+
+    <if test=" startTime!=''">
+        c_create_time <![CDATA[  >= ]]>#{startTime}
+    </if>
+
+    可以修改为这种形式：
+    <if test=" startTime!=''">
+        c_create_time <![CDATA[  >= ]]> '${startTime}'
+    </if>
+
+    或者使用数据库的内置函数进行类型转换(postgresql如下)
+    <if test=" startTime!=''">
+        c_create_time <![CDATA[  >= ]]> date(#{startTime})
+    </if>
