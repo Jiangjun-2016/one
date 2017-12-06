@@ -1,0 +1,61 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+
+public class SimpleExecutor extends BaseExecutor {
+
+  public SimpleExecutor(Configuration configuration, Transaction transaction) {
+    super(configuration, transaction);
+  }
+
+  @Override
+  public int doUpdate(MappedStatement ms, Object parameter) throws SQLException {
+    Statement stmt = null;
+    try {
+      //获得配置文件对象
+      Configuration configuration = ms.getConfiguration();
+      //获得statementHandler里面有statement，来处理
+      StatementHandler handler = configuration.newStatementHandler(this, ms, parameter, RowBounds.DEFAULT, null, null);
+      stmt = prepareStatement(handler, ms.getStatementLog());
+      //最终是一个statement进行处理
+      return handler.update(stmt);
+    } finally {
+      closeStatement(stmt);
+    }
+  }
+
+  @Override
+  public <E> List<E> doQuery(MappedStatement ms, Object parameter, RowBounds rowBounds, ResultHandler resultHandler, BoundSql boundSql) throws SQLException {
+    Statement stmt = null;
+    try {
+      //获得配置文件对象
+      Configuration configuration = ms.getConfiguration();
+      //获得statementHandler里面有statement，来处理
+      StatementHandler handler = configuration.newStatementHandler(wrapper, ms, parameter, rowBounds, resultHandler, boundSql);
+      //获得statement
+      stmt = prepareStatement(handler, ms.getStatementLog());
+      //最终是一个statement进行处理
+      return handler.<E>query(stmt, resultHandler);
+    } finally {
+      closeStatement(stmt);
+    }
+  }
+
+  @Override
+  public List<BatchResult> doFlushStatements(boolean isRollback) throws SQLException {
+    return Collections.emptyList();
+  }
+
+  private Statement prepareStatement(StatementHandler handler, Log statementLog) throws SQLException {
+    Statement stmt;
+    Connection connection = getConnection(statementLog);
+    stmt = handler.prepare(connection);
+    handler.parameterize(stmt);
+    return stmt;
+  }
+
+}
+
