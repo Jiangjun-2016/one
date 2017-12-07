@@ -1,0 +1,54 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  一般数据库的隔离级别有4个，由低到高依次为Read uncommitted、Read committed、Repeatable read、Serializable，
+    这四个级别可以逐个解决脏读、不可重复读、幻读这几类问题。
+
+                                    √: 可能出现    ×: 不会出现
+                        脏读	            不可重复读	                幻读
+    说明
+    Read uncommitted	√	                    √	                    √
+    直译就是"读未提交",意思就是即使一个更新语句没有提交,但是别
+    的事务可以读到这个改变.这是很不安全的。允许任务读取数据库中未提交的数据更改，也称为脏读。
+
+    Read committed	    ×	                    √	                    √
+    直译就是"读提交",可防止脏读，意思就是语句提交以后即执行了COMMIT以后
+    别的事务就能读到这个改变. 只能读取到已经提交的数据。Oracle等多数数据库默认都是该级别
+
+    Repeatable read	    ×	                    ×	                    √
+    直译就是"可以重复读",这是说在同一个事务里面先后执行同一个查询语句的时候,得到的结果是一样的.
+    在同一个事务内的查询都是事务开始时刻一致的，InnoDB默认级别。在SQL标准中，该隔离级别消除了不可重复读，但是还存在幻象读
+
+    Serializable	    ×	                    ×	                    ×
+    直译就是"序列化",意思是说这个事务执行的时候不允许别的事务并发执行. 完全串行化的读，每次读都需要获得表级共享锁，读写相互都会阻塞
+
+1.  Mybatis也是提供了如上表所示的隔离级别，只不过增加了一种没有事务，源码如下：
+    public enum TransactionIsolationLevel {
+          NONE(Connection.TRANSACTION_NONE),
+          READ_COMMITTED(Connection.TRANSACTION_READ_COMMITTED),
+          READ_UNCOMMITTED(Connection.TRANSACTION_READ_UNCOMMITTED),
+          REPEATABLE_READ(Connection.TRANSACTION_REPEATABLE_READ),
+          SERIALIZABLE(Connection.TRANSACTION_SERIALIZABLE);
+
+          private final int level;
+
+          private TransactionIsolationLevel(int level) {
+            this.level = level;
+          }
+
+          public int getLevel() {
+            return level;
+          }
+    }
+
+    这样在DefaultSqlSessionFactory中创建SqlSession时，可以设置数据库的事务隔离级别，以及通过设置autoCommit来设置事务的提交方式，方式如下：
+     当autoCommit=false时，插入的数据报错时，修改的内容不会提交到数据库，但是如果没有进行rollback回滚操作时就会造成数据库死锁问题
+     当autoCommit = true对连续的操作数据中间出现错误时会部分提交，导致产生脏数据。
+        private SqlSession openSessionFromDataSource(ExecutorType execType, TransactionIsolationLevel level, boolean autoCommit)
+
+    Mybatis提供的事务隔离级别完全契合数据库事务隔离级别方式。

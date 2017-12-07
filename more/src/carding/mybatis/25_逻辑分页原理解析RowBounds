@@ -1,0 +1,79 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  物理分页Mybatis插件原理分析（三）分页插件
+    Mybatis提供了一个简单的逻辑分页使用类RowBounds（物理分页当然就是我们在sql语句中指定limit和offset值），
+    在DefaultSqlSession提供的某些查询接口中我们可以看到RowBounds是作为参数用来进行分页的，如下接口：
+    public <E> List<E> selectList(String statement, Object parameter, RowBounds rowBounds)
+
+    RowBounds源码如下：
+    public class RowBounds {
+
+      /* 默认offset是0**/
+      public static final int NO_ROW_OFFSET = 0;
+
+      /* 默认Limit是int的最大值，因此它使用的是逻辑分页**/
+      public static final int NO_ROW_LIMIT = Integer.MAX_VALUE;
+      public static final RowBounds DEFAULT = new RowBounds();
+
+      private int offset;
+      private int limit;
+
+      public RowBounds() {
+        this.offset = NO_ROW_OFFSET;
+        this.limit = NO_ROW_LIMIT;
+      }
+
+      public RowBounds(int offset, int limit) {
+        this.offset = offset;
+        this.limit = limit;
+      }
+
+      public int getOffset() {
+        return offset;
+      }
+
+      public int getLimit() {
+        return limit;
+      }
+
+    }
+    逻辑分页的实现原理：
+    在DefaultResultSetHandler中，逻辑分页会将所有的结果都查询到，然后根据RowBounds中提供的offset和limit值来获取最后的结果，DefaultResultSetHandler实现如下：
+    private void handleRowValuesForSimpleResultMap(ResultSetWrapper rsw, ResultMap resultMap, ResultHandler<?> resultHandler, RowBounds rowBounds,                              ResultMapping parentMapping)throws SQLException {
+            DefaultResultContext<Object> resultContext = new DefaultResultContext<Object>();
+            //跳过RowBounds设置的offset值
+            skipRows(rsw.getResultSet(), rowBounds);
+            //判断数据是否小于limit，如果小于limit的话就不断的循环取值
+            while (shouldProcessMoreRows(resultContext, rowBounds) && rsw.getResultSet().next()) {
+              ResultMap discriminatedResultMap = resolveDiscriminatedResultMap(rsw.getResultSet(), resultMap, null);
+              Object rowValue = getRowValue(rsw, discriminatedResultMap);
+              storeObject(resultHandler, resultContext, rowValue, parentMapping, rsw.getResultSet());
+            }
+    }
+    private boolean shouldProcessMoreRows(ResultContext<?> context, RowBounds rowBounds) throws SQLException {
+        //判断数据是否小于limit，小于返回true
+        return !context.isStopped() && context.getResultCount() < rowBounds.getLimit();
+    }
+
+    //跳过不需要的行,应该就是rowbounds设置的limit和offset
+    private void skipRows(ResultSet rs, RowBounds rowBounds) throws SQLException {
+        if (rs.getType() != ResultSet.TYPE_FORWARD_ONLY) {
+          if (rowBounds.getOffset() != RowBounds.NO_ROW_OFFSET) {
+            rs.absolute(rowBounds.getOffset());
+          }
+        } else {
+          //跳过RowBounds中设置的offset条数据
+          for (int i = 0; i < rowBounds.getOffset(); i++) {
+            rs.next();
+          }
+        }
+    }
+
+    总结：Mybatis的逻辑分页比较简单，简单来说就是取出所有满足条件的数据，然后舍弃掉前面offset条数据，然后再取剩下的数据的limit条
+

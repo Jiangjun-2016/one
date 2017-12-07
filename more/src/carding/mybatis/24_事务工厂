@@ -1,0 +1,98 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  在前面一篇博客Mybatis事务（一）事务管理方式中我们提到，mybatis及spring提供了三个事务实现类：
+    JdbcTransaction、ManagedTransaction和SpringManagedTransaction三个事务实现类，同时Mybatis也很友好的给我们提供了对应事务类的生成工厂。
+    TransactionFactory接口：提供的主要接口是newTransaction（），根据数据库连接Connection来创建事务，源码如下：
+    //事务工厂接口
+    public interface TransactionFactory {
+
+      //配置工厂属性
+      void setProperties(Properties props);
+
+      //通过Connection获得事务
+      Transaction newTransaction(Connection conn);
+
+      //通过数据库，事务等级及事务是否自动提交创建事务
+      Transaction newTransaction(DataSource dataSource, TransactionIsolationLevel level, boolean autoCommit);
+
+    }
+
+    JdbcTransactionFactory：创建JdbcTransaction事务，源码如下：
+    public class JdbcTransactionFactory implements TransactionFactory {
+
+          @Override
+          public void setProperties(Properties props) {
+          }
+
+          @Override
+          public Transaction newTransaction(Connection conn) {
+            //创建JDBC事务
+            return new JdbcTransaction(conn);
+          }
+
+          @Override
+          public Transaction newTransaction(DataSource ds, TransactionIsolationLevel level, boolean autoCommit) {
+            return new JdbcTransaction(ds, level, autoCommit);
+          }
+    }
+
+    ManagedTransactionFactory：创建ManagedTransaction事务，源码如下：
+    public class ManagedTransactionFactory implements TransactionFactory {
+
+          private boolean closeConnection = true;
+
+          @Override
+          public void setProperties(Properties props) {
+            if (props != null) {
+              String closeConnectionProperty = props.getProperty("closeConnection");
+              if (closeConnectionProperty != null) {
+                closeConnection = Boolean.valueOf(closeConnectionProperty);
+              }
+            }
+          }
+
+          @Override
+          public Transaction newTransaction(Connection conn) {
+            //创建MANAGED事务
+            return new ManagedTransaction(conn, closeConnection);
+          }
+
+          @Override
+          public Transaction newTransaction(DataSource ds, TransactionIsolationLevel level, boolean autoCommit) {
+            // Silently ignores autocommit and isolation level, as managed transactions are entirely
+            // controlled by an external manager.  It's silently ignored so that
+            // code remains portable between managed and unmanaged configurations.
+            return new ManagedTransaction(ds, level, closeConnection);
+          }
+    }
+
+    SpringManagedTransactionFactory：创建SpringManagedTransaction，源码如下：
+    public class SpringManagedTransactionFactory implements TransactionFactory {
+
+          @Override
+          public Transaction newTransaction(DataSource dataSource, TransactionIsolationLevel level, boolean autoCommit) {
+            //spring 通过DataSource创建事务
+            return new SpringManagedTransaction(dataSource);
+          }
+
+          @Override
+          public Transaction newTransaction(Connection conn) {
+            //无法通过connection创建事务
+            throw new UnsupportedOperationException("New Spring transactions require a DataSource");
+          }
+
+          @Override
+          public void setProperties(Properties props) {
+            // not needed in this version
+          }
+
+    }
+
+    Mybatis提供了简单有效的事务生产工厂
+

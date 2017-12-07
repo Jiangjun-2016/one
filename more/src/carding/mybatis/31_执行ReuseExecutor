@@ -1,0 +1,106 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+
+0.  ReuseExecutor顾名思义就是重复使用执行，
+    其定义了一个Map<String, Statement>，将执行的sql作为key，
+    将执行的Statement作为value保存，
+    这样执行相同的sql时就可以使用已经存在的Statement，就不需要新创建了，
+    源码及分析如下：
+
+    /**
+     * @author Clinton Begin
+     */
+    public class ReuseExecutor extends BaseExecutor {
+
+      private final Map<String, Statement> statementMap = new HashMap<String, Statement>();
+
+      public ReuseExecutor(Configuration configuration, Transaction transaction) {
+        super(configuration, transaction);
+      }
+
+      @Override
+      public int doUpdate(MappedStatement ms, Object parameter) throws SQLException {
+        //获得配置文件
+        Configuration configuration = ms.getConfiguration();
+        //获得statementHandler 包括插件内容
+        StatementHandler handler = configuration.newStatementHandler(this, ms, parameter, RowBounds.DEFAULT, null, null);
+        //转换为PrepareStatement
+        Statement stmt = prepareStatement(handler, ms.getStatementLog());
+        return handler.update(stmt);
+      }
+
+      @Override
+      public <E> List<E> doQuery(MappedStatement ms, Object parameter, RowBounds rowBounds, ResultHandler resultHandler, BoundSql boundSql) throws                          SQLException {
+        Configuration configuration = ms.getConfiguration();
+        StatementHandler handler = configuration.newStatementHandler(wrapper, ms, parameter, rowBounds, resultHandler, boundSql);
+        Statement stmt = prepareStatement(handler, ms.getStatementLog());
+        return handler.<E>query(stmt, resultHandler);
+      }
+
+      @Override
+      public List<BatchResult> doFlushStatements(boolean isRollback) throws SQLException {
+        for (Statement stmt : statementMap.values()) {
+          //关闭Statement
+          closeStatement(stmt);
+        }
+        //清空sql
+        statementMap.clear();
+        return Collections.emptyList();
+      }
+
+      private Statement prepareStatement(StatementHandler handler, Log statementLog) throws SQLException {
+        Statement stmt;
+        BoundSql boundSql = handler.getBoundSql();
+        //获得sql语句
+        String sql = boundSql.getSql();
+        //查看是否存在Statement
+        if (hasStatementFor(sql)) {
+          //如果存在就获取Statement
+          stmt = getStatement(sql);
+        } else {
+          Connection connection = getConnection(statementLog);
+          //否则通过连接创建一个Statement
+          stmt = handler.prepare(connection);
+          //将sql语句及对应的Statement 保存到map中
+          putStatement(sql, stmt);
+        }
+        handler.parameterize(stmt);
+        return stmt;
+      }
+
+      private boolean hasStatementFor(String sql) {
+        try {
+          //查看map中是否含有sql语句对应的Statement
+          return statementMap.keySet().contains(sql) && !statementMap.get(sql).getConnection().isClosed();
+        } catch (SQLException e) {
+          return false;
+        }
+      }
+
+      private Statement getStatement(String s) {
+        //获得Sql语句对应的Statement
+        return statementMap.get(s);
+      }
+
+      private void putStatement(String sql, Statement stmt) {
+        //将sql语句及对应的Statement保存到map中
+        statementMap.put(sql, stmt);
+      }
+
+    }
+
+
+    Exccutor
+        BaseExecutor
+            BatchExecutor
+            CloseExecutor
+            ResuseExecutor
+            SimpleExecutor
+        CachingExecutor
+

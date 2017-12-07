@@ -1,0 +1,239 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  在Mybatis编程中我们经常会用到将某个bean作为参数类型parameterType或者结果返回值类型ResultType，
+    所以很多时候我们需要把完成的Bean的包名在mapper文件中写上，如下：
+    <select id="selectUser" parameterType="com.dy.entity.User" resultType="com.dy.entity.User">
+        select * from user where c_id=#{id}
+    </select>
+
+    Mybatis给我们提供了一种叫别名的机制，意思就是对某个具体的类设置别名，在mybatis的配置文件中配置如下：
+    <configuration>
+        <typeAliases>
+          <!--
+          通过package, 可以直接指定package的名字， mybatis会自动扫描你指定包下面的javabean,
+          并且默认设置一个别名，默认的名字为： javabean 的首字母小写的非限定类名来作为它的别名。
+          也可在javabean 加上注解@Alias 来自定义别名， 例如： @Alias(user)
+          <package name="com.dy.entity"/>
+           -->
+          <typeAlias alias="user" type="com.dy.entity.User"/>
+      </typeAliases>
+
+      ......
+
+    </configuration>
+
+    这样之后mapper文件中的select可以写成如下格式：
+    <select id="selectUser" parameterType="user" resultType="user">
+        select * from user where c_id=#{id}
+    </select>
+    这样就可以在使用某个bean时使用别名就可以了，不需要写完成的包名+类名
+
+1.  接下来我们介绍TypeAlias别名的实现机制
+    （1）我们在mybatis的配置文件中配置了typeAliases，我们首先分析XMLConfigBuilder类中对于typeAliases的解析，源码如下：
+      //类别名解析
+      private void typeAliasesElement(XNode parent) {
+            if (parent != null) {
+              for (XNode child : parent.getChildren()) {
+                //如果子节点是package,那么就获取package节点的name属性
+                if ("package".equals(child.getName())) {
+                  String typeAliasPackage = child.getStringAttribute("name");
+                  configuration.getTypeAliasRegistry().registerAliases(typeAliasPackage);
+                } else {
+                //如果子节点是typeAlias节点，那么就获取alias属性和type的属性
+                  String alias = child.getStringAttribute("alias");
+                  String type = child.getStringAttribute("type");
+                  try {
+                    //通过type的值来加载获得类
+                    Class<?> clazz = Resources.classForName(type);
+                    if (alias == null) {
+                    //typeAliasRegistry会进行别名注册
+                      typeAliasRegistry.registerAlias(clazz);
+                    } else {
+                      typeAliasRegistry.registerAlias(alias, clazz);
+                    }
+                  } catch (ClassNotFoundException e) {
+                    throw new BuilderException("Error registering typeAlias for '" + alias + "'. Cause: " + e, e);
+                  }
+                }
+              }
+        }
+
+    通过分析源码我们可以得知，解析alias来获得别名，解析type元素来获得类名，
+    通过Resources.classForName(type)获得类信息，然后通过typeAliasRegistry.registerAlias(alias, clazz)将类别名注册到typeAliasRegistry中，
+    这样就完成了mybatis中配置文件的解析。
+    （3）TypeAliasRegistry：是用来记录别名alias和类clazz之间的对应关系的，它可以看做是一个Map，alias作为key，类名作为value，详看源码如下：
+    //其实就是一个map结构，用来对象key别名和value具体的类
+    public class TypeAliasRegistry {
+
+          private final Map<String, Class<?>> TYPE_ALIASES = new HashMap<String, Class<?>>();
+
+          public TypeAliasRegistry() {
+            registerAlias("string", String.class);
+
+            registerAlias("byte", Byte.class);
+            registerAlias("long", Long.class);
+            registerAlias("short", Short.class);
+            registerAlias("int", Integer.class);
+            registerAlias("integer", Integer.class);
+            registerAlias("double", Double.class);
+            registerAlias("float", Float.class);
+            registerAlias("boolean", Boolean.class);
+
+            registerAlias("byte[]", Byte[].class);
+            registerAlias("long[]", Long[].class);
+            registerAlias("short[]", Short[].class);
+            registerAlias("int[]", Integer[].class);
+            registerAlias("integer[]", Integer[].class);
+            registerAlias("double[]", Double[].class);
+            registerAlias("float[]", Float[].class);
+            registerAlias("boolean[]", Boolean[].class);
+
+            registerAlias("_byte", byte.class);
+            registerAlias("_long", long.class);
+            registerAlias("_short", short.class);
+            registerAlias("_int", int.class);
+            registerAlias("_integer", int.class);
+            registerAlias("_double", double.class);
+            registerAlias("_float", float.class);
+            registerAlias("_boolean", boolean.class);
+
+            registerAlias("_byte[]", byte[].class);
+            registerAlias("_long[]", long[].class);
+            registerAlias("_short[]", short[].class);
+            registerAlias("_int[]", int[].class);
+            registerAlias("_integer[]", int[].class);
+            registerAlias("_double[]", double[].class);
+            registerAlias("_float[]", float[].class);
+            registerAlias("_boolean[]", boolean[].class);
+
+            registerAlias("date", Date.class);
+            registerAlias("decimal", BigDecimal.class);
+            registerAlias("bigdecimal", BigDecimal.class);
+            registerAlias("biginteger", BigInteger.class);
+            registerAlias("object", Object.class);
+
+            registerAlias("date[]", Date[].class);
+            registerAlias("decimal[]", BigDecimal[].class);
+            registerAlias("bigdecimal[]", BigDecimal[].class);
+            registerAlias("biginteger[]", BigInteger[].class);
+            registerAlias("object[]", Object[].class);
+
+            registerAlias("map", Map.class);
+            registerAlias("hashmap", HashMap.class);
+            registerAlias("list", List.class);
+            registerAlias("arraylist", ArrayList.class);
+            registerAlias("collection", Collection.class);
+            registerAlias("iterator", Iterator.class);
+
+            registerAlias("ResultSet", ResultSet.class);
+          }
+
+          @SuppressWarnings("unchecked")
+          // throws class cast exception as well if types cannot be assigned
+          /* 通过别名来找到具体的类**/
+          public <T> Class<T> resolveAlias(String string) {
+            try {
+              if (string == null) {
+                return null;
+              }
+              // issue #748
+              String key = string.toLowerCase(Locale.ENGLISH);
+              Class<T> value;
+              if (TYPE_ALIASES.containsKey(key)) {
+                value = (Class<T>) TYPE_ALIASES.get(key);
+              } else {
+                value = (Class<T>) Resources.classForName(string);
+              }
+              return value;
+            } catch (ClassNotFoundException e) {
+              throw new TypeException("Could not resolve type alias '" + string + "'.  Cause: " + e, e);
+            }
+          }
+          /* 通过包名注册类**/
+          public void registerAliases(String packageName){
+            registerAliases(packageName, Object.class);
+          }
+          /* 获得包内的类，除去内部类和接口**/
+          public void registerAliases(String packageName, Class<?> superType){
+            ResolverUtil<Class<?>> resolverUtil = new ResolverUtil<Class<?>>();
+            resolverUtil.find(new ResolverUtil.IsA(superType), packageName);
+            Set<Class<? extends Class<?>>> typeSet = resolverUtil.getClasses();
+            for(Class<?> type : typeSet){
+              // Ignore inner classes and interfaces (including package-info.java)
+              // Skip also inner classes. See issue #6
+              if (!type.isAnonymousClass() && !type.isInterface() && !type.isMemberClass()) {
+                registerAlias(type);
+              }
+            }
+          }
+          /* 注册类**/
+          public void registerAlias(Class<?> type) {
+            String alias = type.getSimpleName();
+            Alias aliasAnnotation = type.getAnnotation(Alias.class);
+            if (aliasAnnotation != null) {
+              alias = aliasAnnotation.value();
+            }
+            registerAlias(alias, type);
+          }
+          /* 注册类包括别名和类**/
+          public void registerAlias(String alias, Class<?> value) {
+            if (alias == null) {
+              throw new TypeException("The parameter alias cannot be null");
+            }
+            // issue #748
+            String key = alias.toLowerCase(Locale.ENGLISH);
+            if (TYPE_ALIASES.containsKey(key) && TYPE_ALIASES.get(key) != null && !TYPE_ALIASES.get(key).equals(value)) {
+              throw new TypeException("The alias '" + alias + "' is already mapped to the value '" + TYPE_ALIASES.get(key).getName() + "'.");
+            }
+            TYPE_ALIASES.put(key, value);
+          }
+          /* 注册类包括别名和类名**/
+          public void registerAlias(String alias, String value) {
+            try {
+              registerAlias(alias, Resources.classForName(value));
+            } catch (ClassNotFoundException e) {
+              throw new TypeException("Error registering type alias "+alias+" for "+value+". Cause: " + e, e);
+            }
+          }
+
+          /**
+           * @since 3.2.2
+           */
+          public Map<String, Class<?>> getTypeAliases() {
+            return Collections.unmodifiableMap(TYPE_ALIASES);
+          }
+
+    }
+    通过上面的源码我们可以看到，它默认注册了一些基本的类型基本类和包装类，然后我们可以调用registerAliases来注册其他类的别名。
+    （3）刚才我们看到了TypeAliasRegistry.registerAliases（）函数会登记别名及类名，
+    我们也可以看到TypeAliasRegistry通过了resolveAlias函数来让我们通过别名alias来获取实际的类，源码如下：
+    /* 通过别名来找到具体的类**/
+    public <T> Class<T> resolveAlias(String string) {
+        try {
+          if (string == null) {
+            return null;
+          }
+          // issue #748
+          String key = string.toLowerCase(Locale.ENGLISH);
+          Class<T> value;
+          if (TYPE_ALIASES.containsKey(key)) {
+            value = (Class<T>) TYPE_ALIASES.get(key);
+          } else {
+            value = (Class<T>) Resources.classForName(string);
+          }
+          return value;
+        } catch (ClassNotFoundException e) {
+          throw new TypeException("Could not resolve type alias '" + string + "'.  Cause: " + e, e);
+        }
+    }
+
+    总结：这样我们就对Mybatis的typaAlias的实现机制就有了一个简单的了解，其实简单说就是创建了一个Map<string,Class<?>>，
+    解析mybatis的配置文件，将alias元素的值作为Map的key，通过反射机制获得的type元素对应的类名的类作为Map的value值，
+    在真正使用时通过alias别名来获取真正的类。
+

@@ -1,0 +1,67 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  在DefaultSqlSession中我们可以看到一系列的增删改查操作的其实都是在调用Executor的接口，
+    Mybatis对外统一提供了一个操作接口类Executor，
+    提供的接口方法有update、query、flushStatements、commit、rollback等接口函数，源码如下：
+    /**
+     * @author Clinton Begin
+     */
+    public interface Executor {
+
+      ResultHandler NO_RESULT_HANDLER = null;
+
+      /* 更新操作**/
+      int update(MappedStatement ms, Object parameter) throws SQLException;
+
+      /* 查询操作*/
+      <E> List<E> query(MappedStatement ms, Object parameter, RowBounds rowBounds, ResultHandler resultHandler, CacheKey cacheKey, BoundSql boundSql) throws                            SQLException;
+
+      <E> List<E> query(MappedStatement ms, Object parameter, RowBounds rowBounds, ResultHandler resultHandler) throws SQLException;
+
+      /* 更新statement操作*/
+      List<BatchResult> flushStatements() throws SQLException;
+      /*提交操作*/
+      void commit(boolean required) throws SQLException;
+      /*事务回滚操作*/
+      void rollback(boolean required) throws SQLException;
+      /*缓存key操作*/
+      CacheKey createCacheKey(MappedStatement ms, Object parameterObject, RowBounds rowBounds, BoundSql boundSql);
+      /*是否开启缓存*/
+      boolean isCached(MappedStatement ms, CacheKey key);
+      /*清除本地缓存操作*/
+      void clearLocalCache();
+      /*推迟加载操作*/
+      void deferLoad(MappedStatement ms, MetaObject resultObject, String property, CacheKey key, Class<?> targetType);
+      /*获取事务*/
+      Transaction getTransaction();
+
+      /*关闭连接*/
+      void close(boolean forceRollback);
+
+      boolean isClosed();
+
+      void setExecutorWrapper(Executor executor);
+
+    }
+    Executor接口只是简单 的定义了一些基本的操作接口，
+    具体实现类有抽象类BaseExecutor、
+    实现类CachingExecutor、
+    实现类BatchExecutor、
+    实现类ReuseExecutor
+    和实现类SimpleExecutor，
+    这些实现类的具体操作我们在接下来的博客中会一步一步进行分析，
+    如下图所示：
+    Exccutor
+        BaseExecutor
+            BatchExecutor
+            CloseExecutor
+            ResuseExecutor
+            SimpleExecutor
+        CachingExecutor
+

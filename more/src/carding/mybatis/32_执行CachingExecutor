@@ -1,0 +1,157 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+
+0.  前面几篇博客我们介绍了Excutor及抽象类BaseExecutor和实现类SimpleExecutor、BatchExecutor和ReuseExecutor：
+    博客列表：
+    Mybatis执行Executor（一）
+    Mybatis执行BaseExecutor（二）
+    Mybatis执行SimpleExecutor（三）
+    Mybatis执行BatchExecutor（四）
+    Mybatis执行ReuseExecutor（五）
+    接下来我们再介绍一个比较重要的类CachingExecutor，通过类名我们可以猜测到，
+    这个Executor执行类是使用内存的，将数据保存到缓存中，这样可以有效的解决增删改查性能。
+    缓存的作用域为mapper（namespace），所以同一个namespace的操作会影响到相同作用域下的缓存，
+    这样不同的域对同一个表进行操作很有可能导致缓存中的数据不一样，出现问题，还是不推荐使用。
+
+    public class CachingExecutor implements Executor {
+
+      private Executor delegate;
+      private TransactionalCacheManager tcm = new TransactionalCacheManager();
+
+      public CachingExecutor(Executor delegate) {
+        this.delegate = delegate;
+        delegate.setExecutorWrapper(this);
+      }
+
+      public Transaction getTransaction() {
+        return delegate.getTransaction();
+      }
+
+      public void close(boolean forceRollback) {
+        try {
+          //issues #499, #524 and #573
+          if (forceRollback) {
+            tcm.rollback();
+          } else {
+            tcm.commit();
+          }
+        } finally {
+          delegate.close(forceRollback);
+        }
+      }
+      //是否关闭了executor
+      public boolean isClosed() {
+        return delegate.isClosed();
+      }
+
+      public int update(MappedStatement ms, Object parameterObject) throws SQLException {
+        //是否需要更缓存
+        flushCacheIfRequired(ms);
+        //更新数据
+        return delegate.update(ms, parameterObject);
+      }
+
+      public <E> List<E> query(MappedStatement ms, Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler) throws SQLException {
+        BoundSql boundSql = ms.getBoundSql(parameterObject);
+        //创建缓存值
+        CacheKey key = createCacheKey(ms, parameterObject, rowBounds, boundSql);
+        //获取记录
+        return query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
+      }
+
+      public <E> List<E> query(MappedStatement ms, Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler, CacheKey key, BoundSql boundSql)
+          throws SQLException {
+        //获取缓存
+        Cache cache = ms.getCache();
+        //如果设置保存到缓存
+        if (cache != null) {
+          flushCacheIfRequired(ms);
+          if (ms.isUseCache() && resultHandler == null) {
+            ensureNoOutParams(ms, parameterObject, boundSql);
+            @SuppressWarnings("unchecked")
+            //从缓存中获取数据
+            List<E> list = (List<E>) tcm.getObject(cache, key);
+            //为空执行一次，将结果保存到缓存中
+            if (list == null) {
+              list = delegate.<E> query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
+              tcm.putObject(cache, key, list); // issue #578. Query must be not synchronized to prevent deadlocks
+            }
+            return list;
+          }
+        }
+        return delegate.<E> query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
+      }
+
+      public List<BatchResult> flushStatements() throws SQLException {
+        return delegate.flushStatements();
+      }
+
+      public void commit(boolean required) throws SQLException {
+        delegate.commit(required);
+        tcm.commit();
+      }
+
+      public void rollback(boolean required) throws SQLException {
+        try {
+          delegate.rollback(required);
+        } finally {
+          if (required) {
+            tcm.rollback();
+          }
+        }
+      }
+
+      private void ensureNoOutParams(MappedStatement ms, Object parameter, BoundSql boundSql) {
+        if (ms.getStatementType() == StatementType.CALLABLE) {
+          for (ParameterMapping parameterMapping : boundSql.getParameterMappings()) {
+            if (parameterMapping.getMode() != ParameterMode.IN) {
+              throw new ExecutorException("Caching stored procedures with OUT params is not supported.  Please configure useCache=false in " + ms.getId() + "                           statement.");
+            }
+          }
+        }
+      }
+
+      public CacheKey createCacheKey(MappedStatement ms, Object parameterObject, RowBounds rowBounds, BoundSql boundSql) {
+        return delegate.createCacheKey(ms, parameterObject, rowBounds, boundSql);
+      }
+
+      public boolean isCached(MappedStatement ms, CacheKey key) {
+        return delegate.isCached(ms, key);
+      }
+
+      public void deferLoad(MappedStatement ms, MetaObject resultObject, String property, CacheKey key, Class<?> targetType) {
+        delegate.deferLoad(ms, resultObject, property, key, targetType);
+      }
+
+      public void clearLocalCache() {
+        delegate.clearLocalCache();
+      }
+
+      private void flushCacheIfRequired(MappedStatement ms) {
+        Cache cache = ms.getCache();
+        if (cache != null && ms.isFlushCacheRequired()) {
+          tcm.clear(cache);
+        }
+      }
+
+      @Override
+      public void setExecutorWrapper(Executor executor) {
+        throw new UnsupportedOperationException("This method should not be called");
+      }
+
+    }
+
+    Exccutor
+        BaseExecutor
+            BatchExecutor
+            CloseExecutor
+            ResuseExecutor
+            SimpleExecutor
+        CachingExecutor
+

@@ -1,0 +1,321 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+
+0.  Mybatis管理事务是分为两种方式:
+    (1)使用JDBC的事务管理机制,就是利用java.sql.Connection对象完成对事务的提交
+    (2)使用MANAGED的事务管理机制，这种机制mybatis自身不会去实现事务管理，而是让程序的容器（JBOSS,WebLogic）来实现对事务的管理
+    在Mybatis的配置文件中可以配置事务管理方式如下：
+    <?xml version="1.0" encoding="UTF-8"?>
+     <!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN" "http://mybatis.org/dtd/mybatis-3-config.dtd">
+     <configuration>
+         <environments default="development">
+              <environment id="development">
+                  <!--配置事务的管理方式-->
+                  <transactionManager type="JDBC" />
+                  <!-- 配置数据库连接信息 -->
+                  <dataSource type="POOLED">
+                      <property name="driver" value="com.mysql.jdbc.Driver" />
+                     <property name="url" value="jdbc:mysql://localhost:3306/mybatis" />
+                     <property name="username" value="root" />
+                     <property name="password" value="XDP" />
+                 </dataSource>
+             </environment>
+         </environments>
+     </configuration>
+
+     Mybatis提供了一个事务接口Transaction，以及两个实现类jdbcTransaction和ManagedTransaction，当spring与Mybatis一起使用时，
+     spring提供了一个实现类SpringManagedTransaction
+     Transaction接口：提供的抽象方法有获取数据库连接getConnection，提交事务commit，回滚事务rollback和关闭连接close，源码如下：
+    //事务接口
+    public interface Transaction {
+      //获得数据库连接
+     Connection getConnection() throws SQLException;
+     void commit() throws SQLException;
+     void rollback() throws SQLException;
+     void close() throws SQLException;
+     }
+
+    JdbcTransaction实现类：Transaction的实现类，通过使用jdbc提供的方式来管理事务，通过Connection提供的事务管理方法来进行事务管理，源码如下：
+    public class JdbcTransaction implements Transaction {
+
+      private static final Log log = LogFactory.getLog(JdbcTransaction.class);
+
+      /* 连接**/
+      protected Connection connection;
+
+      /* 数据源**/
+      protected DataSource dataSource;
+
+      /* 事务等级**/
+      protected TransactionIsolationLevel level;
+
+      /* 事务提交**/
+      protected boolean autoCommmit;
+
+      public JdbcTransaction(DataSource ds, TransactionIsolationLevel desiredLevel, boolean desiredAutoCommit) {
+        dataSource = ds;
+        level = desiredLevel;
+        autoCommmit = desiredAutoCommit;
+      }
+
+      public JdbcTransaction(Connection connection) {
+        this.connection = connection;
+      }
+
+      @Override
+      public Connection getConnection() throws SQLException {
+        if (connection == null) {
+          openConnection();
+        }
+        //返回连接
+        return connection;
+      }
+
+      @Override
+      public void commit() throws SQLException {
+        if (connection != null && !connection.getAutoCommit()) {
+          if (log.isDebugEnabled()) {
+            log.debug("Committing JDBC Connection [" + connection + "]");
+          }
+          //连接提交
+          connection.commit();
+        }
+      }
+
+      @Override
+      public void rollback() throws SQLException {
+        if (connection != null && !connection.getAutoCommit()) {
+          if (log.isDebugEnabled()) {
+            log.debug("Rolling back JDBC Connection [" + connection + "]");
+          }
+          //连接回滚
+          connection.rollback();
+        }
+      }
+
+      @Override
+      public void close() throws SQLException {
+        if (connection != null) {
+          resetAutoCommit();
+          if (log.isDebugEnabled()) {
+            log.debug("Closing JDBC Connection [" + connection + "]");
+          }
+          //关闭连接
+          connection.close();
+        }
+      }
+
+      protected void setDesiredAutoCommit(boolean desiredAutoCommit) {
+        try {
+          //事务提交状态不一致时修改
+          if (connection.getAutoCommit() != desiredAutoCommit) {
+            if (log.isDebugEnabled()) {
+              log.debug("Setting autocommit to " + desiredAutoCommit + " on JDBC Connection [" + connection + "]");
+            }
+            connection.setAutoCommit(desiredAutoCommit);
+          }
+        } catch (SQLException e) {
+          // Only a very poorly implemented driver would fail here,
+          // and there's not much we can do about that.
+          throw new TransactionException("Error configuring AutoCommit.  "
+              + "Your driver may not support getAutoCommit() or setAutoCommit(). "
+              + "Requested setting: " + desiredAutoCommit + ".  Cause: " + e, e);
+        }
+      }
+
+      protected void resetAutoCommit() {
+        try {
+          if (!connection.getAutoCommit()) {
+            // MyBatis does not call commit/rollback on a connection if just selects were performed. select操作没有commit和rollback事务
+            // Some databases start transactions with select statements 一些数据库在select操作是会开启事务
+            // and they mandate a commit/rollback before closing the connection.
+            // A workaround is setting the autocommit to true before closing the connection.
+            // Sybase throws an exception here.
+            if (log.isDebugEnabled()) {
+              log.debug("Resetting autocommit to true on JDBC Connection [" + connection + "]");
+            }
+            connection.setAutoCommit(true);
+          }
+        } catch (SQLException e) {
+          if (log.isDebugEnabled()) {
+            log.debug("Error resetting autocommit to true "
+              + "before closing the connection.  Cause: " + e);
+          }
+        }
+      }
+      //打开连接
+      protected void openConnection() throws SQLException {
+        if (log.isDebugEnabled()) {
+          log.debug("Opening JDBC Connection");
+        }
+        //从数据源中获得连接
+        connection = dataSource.getConnection();
+        if (level != null) {
+          connection.setTransactionIsolation(level.getLevel());
+        }
+        setDesiredAutoCommit(autoCommmit);
+      }
+
+    }
+
+    ManagedTransaction实现类：通过容器来进行事务管理，所有它对事务提交和回滚并不会做任何操作，源码如下：
+    public class ManagedTransaction implements Transaction {
+
+      private static final Log log = LogFactory.getLog(ManagedTransaction.class);
+
+      private DataSource dataSource;
+      private TransactionIsolationLevel level;
+      private Connection connection;
+      private boolean closeConnection;
+
+      public ManagedTransaction(Connection connection, boolean closeConnection) {
+        this.connection = connection;
+        this.closeConnection = closeConnection;
+      }
+      //数据源，事务等级及是否关闭事务
+      public ManagedTransaction(DataSource ds, TransactionIsolationLevel level, boolean closeConnection) {
+        this.dataSource = ds;
+        this.level = level;
+        this.closeConnection = closeConnection;
+      }
+
+      @Override
+      public Connection getConnection() throws SQLException {
+        if (this.connection == null) {
+          openConnection();
+        }
+        return this.connection;
+      }
+      //提交操作无效
+      @Override
+      public void commit() throws SQLException {
+        // Does nothing
+      }
+      //回滚操作无效
+      @Override
+      public void rollback() throws SQLException {
+        // Does nothing
+      }
+
+      @Override
+      public void close() throws SQLException {
+        if (this.closeConnection && this.connection != null) {
+          if (log.isDebugEnabled()) {
+            log.debug("Closing JDBC Connection [" + this.connection + "]");
+          }
+          //关闭连接
+          this.connection.close();
+        }
+      }
+
+      protected void openConnection() throws SQLException {
+        if (log.isDebugEnabled()) {
+          log.debug("Opening JDBC Connection");
+        }
+        this.connection = this.dataSource.getConnection();
+        if (this.level != null) {
+          this.connection.setTransactionIsolation(this.level.getLevel());
+        }
+      }
+
+    }
+
+    SpringManagedTransaction实现类：它其实也是通过使用JDBC来进行事务管理的，当spring的事务管理有效时，
+    不需要操作commit/rollback/close，spring事务管理会自动帮我们完成，源码如下：
+
+    public class SpringManagedTransaction implements Transaction {
+
+      private static final Log LOGGER = LogFactory.getLog(SpringManagedTransaction.class);
+
+      private final DataSource dataSource;
+
+      private Connection connection;
+
+      private boolean isConnectionTransactional;
+
+      private boolean autoCommit;
+
+      //获得数据源
+      public SpringManagedTransaction(DataSource dataSource) {
+        notNull(dataSource, "No DataSource specified");
+        this.dataSource = dataSource;
+      }
+
+      /**
+       * {@inheritDoc}
+       * 返回数据库连接
+       */
+      @Override
+      public Connection getConnection() throws SQLException {
+        if (this.connection == null) {
+          openConnection();
+        }
+        return this.connection;
+      }
+
+      /**
+       * Gets a connection from Spring transaction manager and discovers if this
+       * {@code Transaction} should manage connection or let it to Spring.
+       * <p>
+       * It also reads autocommit setting because when using Spring Transaction MyBatis
+       * thinks that autocommit is always false and will always call commit/rollback
+       * so we need to no-op that calls.
+       *从spring的事务管理中获得一个连接
+       */
+      private void openConnection() throws SQLException {
+        this.connection = DataSourceUtils.getConnection(this.dataSource);
+        this.autoCommit = this.connection.getAutoCommit();
+        this.isConnectionTransactional = DataSourceUtils.isConnectionTransactional(this.connection, this.dataSource);
+
+        if (LOGGER.isDebugEnabled()) {
+          LOGGER.debug(
+              "JDBC Connection ["
+                  + this.connection
+                  + "] will"
+                  + (this.isConnectionTransactional ? " " : " not ")
+                  + "be managed by Spring");
+        }
+      }
+
+      /**
+       * {@inheritDoc}
+       */
+      @Override
+      public void commit() throws SQLException {
+        if (this.connection != null && !this.isConnectionTransactional && !this.autoCommit) {
+          if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Committing JDBC Connection [" + this.connection + "]");
+          }
+          this.connection.commit();
+        }
+      }
+
+      /**
+       * {@inheritDoc}
+       */
+      @Override
+      public void rollback() throws SQLException {
+        if (this.connection != null && !this.isConnectionTransactional && !this.autoCommit) {
+          if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Rolling back JDBC Connection [" + this.connection + "]");
+          }
+          this.connection.rollback();
+        }
+      }
+
+      /**
+       * {@inheritDoc}
+       */
+      @Override
+      public void close() throws SQLException {
+        DataSourceUtils.releaseConnection(this.connection, this.dataSource);
+      }
+
+    }
+
+    Mybatis的事务管理机制还是比较简单的，其并没有做过多的操作，只是封装一下方便别人调用而已。
