@@ -1,0 +1,150 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+0.  ParameterHandler是用来设置参数规则的，当StatementHandler调用prepare方法之后，接下来就是调用它来进行设置参数。
+    ParameterHandler接口：
+    public interface ParameterHandler {
+
+      Object getParameterObject();
+
+      void setParameters(PreparedStatement ps)
+          throws SQLException;
+
+    }
+
+    getParameterObject是用来获取参数的，setParameters(PreparedStatement ps)是用来设置参数的，相当于对sql中所有的参数都执行ps.setXXX(value);
+    ParameterHandler的默认实现类是DefaultParameterHandler，其实现了接口中定义的两个方法。
+
+    getParameterObject是获取参数，这个参数值就是你传递进来的值，可能是个实体、map或单个基本类型数据。
+    @Override
+      public Object getParameterObject() {
+        return parameterObject;
+      }
+
+    设置参数，其实就是你在sql语句中配置的java对象和jdbc类型对应的关系#{id,jdbcType=INTEGER}，id默认类型是javaType=class java.lang.Integer。
+    //设置参数
+      @Override
+      public void setParameters(PreparedStatement ps) {
+        ErrorContext.instance().activity("setting parameters").object(mappedStatement.getParameterMap().getId());
+        //获取所有参数，ParameterMapping是java类型和jdbc类型的对应关系
+        List<ParameterMapping> parameterMappings = boundSql.getParameterMappings();
+        if (parameterMappings != null) {
+          for (int i = 0; i < parameterMappings.size(); i++) {
+            ParameterMapping parameterMapping = parameterMappings.get(i);
+            if (parameterMapping.getMode() != ParameterMode.OUT) {
+              //参数值
+              Object value;
+              //获取参数名称
+              String propertyName = parameterMapping.getProperty();
+              if (boundSql.hasAdditionalParameter(propertyName)) { // issue #448 ask first for additional params
+                //获取参数值
+                value = boundSql.getAdditionalParameter(propertyName);
+              } else if (parameterObject == null) {
+                value = null;
+              } else if (typeHandlerRegistry.hasTypeHandler(parameterObject.getClass())) {
+                 //如果是单个值则直接赋值
+                value = parameterObject;
+              } else {
+                MetaObject metaObject = configuration.newMetaObject(parameterObject);
+                value = metaObject.getValue(propertyName);
+              }
+             //获取参数值对应的jdbc类型
+              TypeHandler typeHandler = parameterMapping.getTypeHandler();
+              JdbcType jdbcType = parameterMapping.getJdbcType();
+              if (value == null && jdbcType == null) {
+                jdbcType = configuration.getJdbcTypeForNull();
+              }
+              try {
+                //设置参数值和jdbc类型的对应关系
+                typeHandler.setParameter(ps, i + 1, value, jdbcType);
+              } catch (TypeException e) {
+                throw new TypeException("Could not set parameters for mapping: " + parameterMapping + ". Cause: " + e, e);
+              } catch (SQLException e) {
+                throw new TypeException("Could not set parameters for mapping: " + parameterMapping + ". Cause: " + e, e);
+              }
+            }
+          }
+        }
+      }
+    这样就设置了一个参数值对应的jdbcType了
+
+    完整的DefaultParameterHandler源码如下：
+    /**
+     * @author Clinton Begin
+     * @author Eduardo Macarron
+     */
+    public class DefaultParameterHandler implements ParameterHandler {
+
+      private final TypeHandlerRegistry typeHandlerRegistry;
+
+      private final MappedStatement mappedStatement;
+      //所有的参数值
+      private final Object parameterObject;
+      private BoundSql boundSql;
+      private Configuration configuration;
+
+      public DefaultParameterHandler(MappedStatement mappedStatement, Object parameterObject, BoundSql boundSql) {
+        this.mappedStatement = mappedStatement;
+        this.configuration = mappedStatement.getConfiguration();
+        this.typeHandlerRegistry = mappedStatement.getConfiguration().getTypeHandlerRegistry();
+        this.parameterObject = parameterObject;
+        this.boundSql = boundSql;
+      }
+
+      @Override
+      public Object getParameterObject() {
+        return parameterObject;
+      }
+      //设置参数
+      @Override
+      public void setParameters(PreparedStatement ps) {
+        ErrorContext.instance().activity("setting parameters").object(mappedStatement.getParameterMap().getId());
+        //获取所有参数，ParameterMapping是java类型和jdbc类型的对应关系
+        List<ParameterMapping> parameterMappings = boundSql.getParameterMappings();
+        if (parameterMappings != null) {
+          for (int i = 0; i < parameterMappings.size(); i++) {
+            ParameterMapping parameterMapping = parameterMappings.get(i);
+            if (parameterMapping.getMode() != ParameterMode.OUT) {
+              //参数值
+              Object value;
+              //获取参数名称
+              String propertyName = parameterMapping.getProperty();
+              if (boundSql.hasAdditionalParameter(propertyName)) { // issue #448 ask first for additional params
+                //获取参数值
+                value = boundSql.getAdditionalParameter(propertyName);
+              } else if (parameterObject == null) {
+                value = null;
+              } else if (typeHandlerRegistry.hasTypeHandler(parameterObject.getClass())) {
+                 //如果是单个值则直接赋值
+                value = parameterObject;
+              } else {
+                MetaObject metaObject = configuration.newMetaObject(parameterObject);
+                value = metaObject.getValue(propertyName);
+              }
+              //获取参数值对应的jdbc类型
+              TypeHandler typeHandler = parameterMapping.getTypeHandler();
+              JdbcType jdbcType = parameterMapping.getJdbcType();
+              if (value == null && jdbcType == null) {
+                jdbcType = configuration.getJdbcTypeForNull();
+              }
+              try {
+                //设置参数值和jdbc类型的对应关系
+                typeHandler.setParameter(ps, i + 1, value, jdbcType);
+              } catch (TypeException e) {
+                throw new TypeException("Could not set parameters for mapping: " + parameterMapping + ". Cause: " + e, e);
+              } catch (SQLException e) {
+                throw new TypeException("Could not set parameters for mapping: " + parameterMapping + ". Cause: " + e, e);
+              }
+            }
+          }
+        }
+      }
+
+    }

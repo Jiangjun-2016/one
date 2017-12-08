@@ -1,0 +1,67 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+0.  这一篇博客我们来介绍一下Mybatis执行sql语句返回的结果值的到实体对象的映射机制。首先ResultType和ResultMap的使用方式是不同的。
+    ResultType的使用方式：
+    resultType的值为实体类
+    <select id="getUser" parameterType="int" resultType="com.tianjunwei.learn.learn1.entity.User">
+             select * from users where id=#{id}
+    </select>
+
+    ResultMap的使用方式：
+    首先要定义resultMap的对应关系
+    <resultMap type="com.tianjunwei.learn.learn1.entity.User" id="user">
+            <id column="id" property="id" javaType="int" jdbcType="INTEGER"></id>
+            <result column="name" property="names" javaType="string" jdbcType=VARCHAR/>
+            <result column="age" property="age" javaType="int" jdbcType="INTEGER"/>
+    </resultMap>
+    接下来直接使用id值resultMap="user"
+    <select id="getById" parameterType="int" resultMap="user">
+            select * from users where id=#{id} and 1=1
+    </select>
+
+    以上就完成了resultType和resultMap的使用。
+    其实mybatis的默认实现机制是首先会自动使用resultType模式，
+    当表中的字段值和实体中的名称不一致时再使用ResultMap方式，
+    如上面的实体User中的names和表中字段name中的对应关系，
+    所以使用resultType方式实体类中User的names属性值为空，
+    而使用resultMap方式实体类中就会有值。
+    当强制使用resultMap而不是ResultType是需要进行如下配置：增加了autoMapping=false，默认值为null
+        <resultMap type="com.tianjunwei.learn.learn1.entity.User" id="user" autoMapping="false">
+            <id column="id" property="id" javaType="int" jdbcType="INTEGER"></id>
+            <result column="name" property="names" javaType="string" jdbcType="VARCHAR"/>
+            <result column="age" property="age" javaType="int" jdbcType="INTEGER"/>
+         </resultMap>
+
+    接下来我们介绍一下其实现机制：
+    其具体实现是在DefaultResultSetHandler中，
+    在获取每行数据时会根据resultType或者resultMap来给对象赋值，
+    返回resultObject。
+        private Object getRowValue(ResultSetWrapper rsw, ResultMap resultMap) throws SQLException {
+            final ResultLoaderMap lazyLoader = new ResultLoaderMap();
+            Object resultObject = createResultObject(rsw, resultMap, lazyLoader, null);
+            if (resultObject != null && !hasTypeHandlerForResultObject(rsw, resultMap.getType())) {
+              final MetaObject metaObject = configuration.newMetaObject(resultObject);
+              boolean foundValues = !resultMap.getConstructorResultMappings().isEmpty();
+              //判断是否可以使用resultType，如果不做任何额外设置，返回true
+              if (shouldApplyAutomaticMappings(resultMap, false)) {
+                foundValues = applyAutomaticMappings(rsw, resultMap, metaObject, null) || foundValues;
+              }
+              //使用resultMap方式
+              foundValues = applyPropertyMappings(rsw, resultMap, metaObject, lazyLoader, null) || foundValues;
+              foundValues = lazyLoader.size() > 0 || foundValues;
+              resultObject = foundValues ? resultObject : null;
+              return resultObject;
+            }
+            return resultObject;
+        }
+
+
+

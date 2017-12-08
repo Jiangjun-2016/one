@@ -1,0 +1,161 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+Mybatis提供了关联查询映射的功能。
+一、一对一关联
+实体类如下：
+Users表对应的实体类：
+public class User {
+
+    private int id;
+    private String names;
+    private int age;
+    private Teacher teacher;
+
+    ......getXxx和setXxx方法
+
+}
+
+Teacher表对应的实体类：
+public class Teacher {
+
+    private int id;
+    private String name;
+
+    .....getXxx和setXxx方法
+
+}
+
+Mapper文件中的配置如下：
+<mapper namespace="com.tianjunwei.lazy.entity.Users">
+
+    <select id="getUser" parameterType="int" resultMap="user">
+        select * from users,tbl_teacher where users.id=#{id} and users.teacher_id=tbl_teacher.id
+    </select>
+
+    <resultMap type="com.tianjunwei.lazy.entity.User" id="user" >
+        <id column="id" property="id" javaType="int" jdbcType="INTEGER"></id>
+        <result column="name" property="names" javaType="string" jdbcType="VARCHAR"/>
+        <result column="age" property="age" javaType="int" jdbcType="INTEGER"/>
+        <association property="teacher" javaType="com.tianjunwei.lazy.entity.Teacher"> <!-- fetchType="lazy" -->
+            <id property="id" column="id"/>
+            <result property="name" column="name"/>
+        </association>
+    </resultMap>
+
+</mapper>
+
+Main函数如下：
+public class LazyUser {
+
+    public static void main(String [] args){
+
+           //mybatis的配置文件
+            String resource = "learn/mybatis-config.xml";
+            InputStream is = LazyUser.class.getClassLoader().getResourceAsStream(resource);
+            //构建sqlSession的工厂
+            SqlSessionFactory sessionFactory = new SqlSessionFactoryBuilder().build(is);
+            SqlSession session = sessionFactory.openSession();
+            String statement = "com.tianjunwei.lazy.entity.Users.getUser";//映射sql的标识字符串
+            //执行查询返回一个唯一user对象的sql
+            User user = session.selectOne(statement, 1);
+            session.commit(true);
+            System.out.println(user.getNames());
+            Teacher teacher = user.getTeacher();
+            System.err.println(teacher.getName());
+
+        }
+}
+这样就可以通过查询获得一对一的User和Teacher的关联数据。
+虽然上面的示例帮助我们查询到了User和Teacher的关联数据，但有时候可能我们并不需要关联数据，
+并且我们是使用一条sql语句通过两个表的联合查询来获得数据的。
+Mybatis给我们提供了延迟加载的机制，就是当我们不需要Teacher的数据时，并不会给我们查询，
+当需要Teacher数据时再进行查询，这样有一点不好的地方就是不是一次查询数据，需要多次连接数据库来获取数据。
+
+1、首选需要在Mybatis的配置文件中添加如下配置：
+<!-- 打开延迟加载的开关 -->
+<setting name="lazyLoadingEnabled" value="true" />
+<!-- 将积极加载改为消息加载即按需加载 -->
+<setting name="aggressiveLazyLoading" value="false"/>
+2、修改Mapping文件中的内容：
+其实就是执行两次sql语句分别获取Users和Teacher中的值
+<mapper namespace="com.tianjunwei.lazy.entity.User">
+
+     <select id="getById" parameterType="int" resultMap="user">
+        select * from users where users.id=#{id}
+     </select>
+
+     <select id="getTeacher" resultMap="teacher">
+        select * from tbl_teacher where id=#{id}
+     </select>
+
+     <resultMap type="com.tianjunwei.lazy.entity.Teacher" id="teacher" >
+        <id column="id" property="id" javaType="int" jdbcType="INTEGER"></id>
+        <result column="name" property="name" javaType="string" jdbcType="VARCHAR"/>
+     </resultMap>
+
+     <resultMap type="com.tianjunwei.lazy.entity.User" id="user" >
+        <id column="id" property="id" javaType="int" jdbcType="INTEGER"></id>
+        <result column="name" property="names" javaType="string" jdbcType="VARCHAR"/>
+        <result column="age" property="age" javaType="int" jdbcType="INTEGER"/>
+        <association property="teacher" javaType="com.tianjunwei.lazy.entity.Teacher" select="com.tianjunwei.lazy.entity.User.getTeacher" column="id"> <!--                 fetchType="lazy" -->
+             <id property="id" column="id"/>
+             <result property="name" column="name"/>
+         </association>
+     </resultMap>
+
+ </mapper>
+
+二、一对多关联
+
+我们介绍一下一对多情况
+Teacher的实体定义如下：
+
+public class Teacher {
+
+    private int id;
+    private String name;
+
+    private List<User> users;
+
+    .....getXxx和setXxx方法....
+
+}
+
+Mapper文件中的定义如下，一对多使用的标签是collection，这里我们还是使用延迟加载方式，实现原理就是执行两次SQL，按需执行SQL语句。
+<mapper namespace="com.tianjunwei.lazy.entity.Teacher">
+
+     <select id="getById" parameterType="int" resultMap="user">
+        select * from users where users.teacher_id=#{id}
+     </select>
+
+     <select id="getTeacher" resultMap="teacher">
+        select * from tbl_teacher where id=#{id}
+     </select>
+
+     <resultMap type="com.tianjunwei.lazy.entity.Teacher" id="teacher" >
+        <id column="id" property="id" javaType="int" jdbcType="INTEGER"></id>
+        <result column="name" property="name" javaType="string" jdbcType="VARCHAR"/>
+         <collection property="users" column="id"  select="com.tianjunwei.lazy.entity.Teacher.getById" javaType="list">//使用collection标签
+         </collection>
+     </resultMap>
+
+     <resultMap type="com.tianjunwei.lazy.entity.User" id="user" >
+        <id column="id" property="id" javaType="int" jdbcType="INTEGER"></id>
+        <result column="name" property="names" javaType="string" jdbcType="VARCHAR"/>
+        <result column="age" property="age" javaType="int" jdbcType="INTEGER"/>
+     </resultMap>
+
+ </mapper>
+
+
+
+
+

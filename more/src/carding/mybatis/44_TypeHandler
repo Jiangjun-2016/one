@@ -1,0 +1,155 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+0.  ORM框架最重要功能是将面向对象方法中的对象和关系型数据库中的表关联了起来，
+    在关联过程中就必然涉及到对象中的数据类型和数据库中的表字段类型的转换，
+    Mybatis中的org.apache.ibatis.type包主要就是实现这个功能。
+
+    TypeHandler的功能就是给参数设置指定的jdbc类型和返回对应的java类型的数据。
+
+    接口TypeHandler中定义如下方法：
+    主要有两部分：
+    （1）setParameter是设置参数的类型
+    （2）getResult是根据值的jdbc类型返回对应的java类型
+
+    public interface TypeHandler<T> {
+      void setParameter(PreparedStatement ps, int i, T parameter, JdbcType jdbcType) throws SQLException;
+      T getResult(ResultSet rs, String columnName) throws SQLException;
+      T getResult(ResultSet rs, int columnIndex) throws SQLException;
+      T getResult(CallableStatement cs, int columnIndex) throws SQLException;
+    }
+
+    在抽象类BaseTypeHandler中又增加了一些相应的模板方法
+    public abstract class BaseTypeHandler<T> extends TypeReference<T> implements TypeHandler<T> {
+      protected Configuration configuration;
+      public void setConfiguration(Configuration c) {
+        this.configuration = c;
+      }
+      @Override
+      public void setParameter(PreparedStatement ps, int i, T parameter, JdbcType jdbcType) throws SQLException {
+        if (parameter == null) {
+          if (jdbcType == null) {
+            throw new TypeException("JDBC requires that the JdbcType must be specified for all nullable parameters.");
+          }
+          try {
+            ps.setNull(i, jdbcType.TYPE_CODE);
+          } catch (SQLException e) {
+            throw new TypeException("Error setting null for parameter #" + i + " with JdbcType " + jdbcType + " . " +
+                    "Try setting a different JdbcType for this parameter or a different jdbcTypeForNull configuration property. " +
+                    "Cause: " + e, e);
+          }
+        } else {
+          try {
+            setNonNullParameter(ps, i, parameter, jdbcType);
+          } catch (Exception e) {
+            throw new TypeException("Error setting non null for parameter #" + i + " with JdbcType " + jdbcType + " . " +
+                    "Try setting a different JdbcType for this parameter or a different configuration property. " +
+                    "Cause: " + e, e);
+          }
+        }
+      }
+      @Override
+      public T getResult(ResultSet rs, String columnName) throws SQLException {
+        T result;
+        try {
+          result = getNullableResult(rs, columnName);
+        } catch (Exception e) {
+          throw new ResultMapException("Error attempting to get column '" + columnName + "' from result set.  Cause: " + e, e);
+        }
+        if (rs.wasNull()) {
+          return null;
+        } else {
+          return result;
+        }
+      }
+      @Override
+      public T getResult(ResultSet rs, int columnIndex) throws SQLException {
+        T result;
+        try {
+          result = getNullableResult(rs, columnIndex);
+        } catch (Exception e) {
+          throw new ResultMapException("Error attempting to get column #" + columnIndex+ " from result set.  Cause: " + e, e);
+        }
+        if (rs.wasNull()) {
+          return null;
+        } else {
+          return result;
+        }
+      }
+      @Override
+      public T getResult(CallableStatement cs, int columnIndex) throws SQLException {
+        T result;
+        try {
+          result = getNullableResult(cs, columnIndex);
+        } catch (Exception e) {
+          throw new ResultMapException("Error attempting to get column #" + columnIndex+ " from callable statement.  Cause: " + e, e);
+        }
+        if (cs.wasNull()) {
+          return null;
+        } else {
+          return result;
+        }
+      }
+      public abstract void setNonNullParameter(PreparedStatement ps, int i, T parameter, JdbcType jdbcType) throws SQLException;
+      public abstract T getNullableResult(ResultSet rs, String columnName) throws SQLException;
+      public abstract T getNullableResult(ResultSet rs, int columnIndex) throws SQLException;
+      public abstract T getNullableResult(CallableStatement cs, int columnIndex) throws SQLException;
+
+    }
+
+    最终完整的实现还是在实现类中，接下来我们介绍众多实现类中的一个IntegerTypeHandler
+    1、setNonNullParameter实现的功能就是接口中定义的setParameter方法要提供的功能，
+    其实也是比较简单的IntegerTypeHandler中实现的就是
+    调用PreparedStatement的setInt方法来给相应的参数设置int值，
+    其他类型类似。
+    @Override
+      public void setNonNullParameter(PreparedStatement ps, int i, Integer parameter, JdbcType jdbcType)
+          throws SQLException {
+        ps.setInt(i, parameter);
+      }
+    2、getNullableResult实现的就是接口中定义的getResult方法提供的功能，
+    主要就是将返回值作为Integer返回。
+    @Override
+    public Integer getNullableResult(ResultSet rs, int columnIndex)
+        throws SQLException {
+      return rs.getInt(columnIndex);
+    }
+
+    IntegerTypeHandler完整的源码如下：
+    public class IntegerTypeHandler extends BaseTypeHandler<Integer> {
+
+      @Override
+      public void setNonNullParameter(PreparedStatement ps, int i, Integer parameter, JdbcType jdbcType)
+          throws SQLException {
+        ps.setInt(i, parameter);
+      }
+
+      @Override
+      public Integer getNullableResult(ResultSet rs, String columnName)
+          throws SQLException {
+        return rs.getInt(columnName);
+      }
+
+      @Override
+      public Integer getNullableResult(ResultSet rs, int columnIndex)
+          throws SQLException {
+        return rs.getInt(columnIndex);
+      }
+
+      @Override
+      public Integer getNullableResult(CallableStatement cs, int columnIndex)
+          throws SQLException {
+        return cs.getInt(columnIndex);
+      }
+    }
+
+    其他类型对应的TypeHandler与IntegerTypeHandler类似。
+
+

@@ -1,0 +1,51 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+在上一篇博客Mybatis源码分析--关联表查询及延迟加载（一）中我们简单介绍了Mybatis的延迟加载的编程，
+接下来我们通过分析源码来分析一下Mybatis延迟加载的实现原理。
+其实简单来说Mybatis的延迟加载就是分多次执行SQL语句，这样就实现了延迟加载的机制，
+并且第一次执行的结果值可能是接下来执行的SQL语句的参数值，
+Mybatis实现执行接下来的SQL的原理机制是通过代理类来实现的，
+就是第一次执行的结果对象其实已经是一个代理对象，
+当执行接下来相关的对象时会执行其他SQL语句，
+这样就实现了延迟加载的机制。
+其实现在DefaultResultSetHandler的createResultObject中。
+private Object createResultObject(ResultSetWrapper rsw, ResultMap resultMap, ResultLoaderMap lazyLoader, String columnPrefix) throws SQLException {
+    final List<Class<?>> constructorArgTypes = new ArrayList<Class<?>>();
+    final List<Object> constructorArgs = new ArrayList<Object>();
+    final Object resultObject = createResultObject(rsw, resultMap, constructorArgTypes, constructorArgs, columnPrefix);
+    if (resultObject != null && !hasTypeHandlerForResultObject(rsw, resultMap.getType())) {
+      final List<ResultMapping> propertyMappings = resultMap.getPropertyResultMappings();
+      for (ResultMapping propertyMapping : propertyMappings) {
+        // issue gcode #109 && issue #149
+        //如果配置了延迟加载，这是返回的对象为代理对象
+        if (propertyMapping.getNestedQueryId() != null && propertyMapping.isLazy()) {
+          return configuration.getProxyFactory().createProxy(resultObject, lazyLoader, configuration, objectFactory, constructorArgTypes, constructorArgs);
+        }
+      }
+    }
+    return resultObject;
+  }
+mybatis提供了两种方式来实现代理机制
+configuration.getProxyFactory().createProxy(resultObject, lazyLoader, configuration, objectFactory, constructorArgTypes, constructorArgs)
+最终调用的是如下两个实现类，目的就是创建代理类。
+
+其实这样的结果就是结果对象teacher就是一个代理类，
+当执行和User相关的操作时会执行User相关的SQL语句，这样就简单的实现了延迟加载机制。
+Teacher teacher =  (Teacher) session.selectList(statement, 1).get(0);
+ystem.out.println(teacher.getName());
+List<User> users = teacher.getUsers();
+System.err.println(users.get(3).getAge());
+
+当我们执行如下语句
+System.err.println(teacher.getClass());
+
+获得的结果是：可以看出teacher已经是一个代理类了class com.tianjunwei.lazy.entity.Teacher_$$_jvstb9_0。
+
