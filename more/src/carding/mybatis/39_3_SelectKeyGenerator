@@ -1,0 +1,129 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+0.  前面两篇博客我们介绍了MyBatis主键生成器KeyGenerator（一）和MyBatis主键生成器Jdbc3KeyGenerator（二），
+    接下来我们介绍SelectKeyGenerator，
+    如在Oraclee中并不提供自增组件，提供了Sequence主键，
+    我们就需要执行它的Sequence主键，如在mysql中如下配置：
+    <insert id="save">
+        <selectKey resultType="int" keyProperty="id" order="BEFORE">
+             SELECT LAST_INSERT_ID() AS id
+        </selectKey>
+        insert into tbl_log (log_type,log_info) values
+            (#{logType},#{logInfo})
+    </insert>
+
+    其实现原理就是执行selectKey中的sql语句来获得结果，
+    在SelectKeyGenerator的源码实现中就是执行 select last_insert_id() as id这条sql语句，
+    获得结果，并赋值给id，源码实现如下：
+
+    /**
+     * @author Clinton Begin
+     * @author Jeff Butler
+     */
+    public class SelectKeyGenerator implements KeyGenerator {
+
+      public static final String SELECT_KEY_SUFFIX = "!selectKey";
+      private boolean executeBefore;
+      private MappedStatement keyStatement;
+
+      public SelectKeyGenerator(MappedStatement keyStatement, boolean executeBefore) {
+        this.executeBefore = executeBefore;
+        this.keyStatement = keyStatement;
+      }
+
+      @Override
+      public void processBefore(Executor executor, MappedStatement ms, Statement stmt, Object parameter) {
+        if (executeBefore) {
+          processGeneratedKeys(executor, ms, parameter);
+        }
+      }
+
+      @Override
+      public void processAfter(Executor executor, MappedStatement ms, Statement stmt, Object parameter) {
+        if (!executeBefore) {
+          processGeneratedKeys(executor, ms, parameter);
+        }
+      }
+      //执行来获得结果值
+      private void processGeneratedKeys(Executor executor, MappedStatement ms, Object parameter) {
+            try {
+                  if (parameter != null && keyStatement != null && keyStatement.getKeyProperties() != null) {
+                    String[] keyProperties = keyStatement.getKeyProperties();
+                    final Configuration configuration = ms.getConfiguration();
+                    final MetaObject metaParam = configuration.newMetaObject(parameter);
+                    if (keyProperties != null) {
+                      // Do not close keyExecutor.
+                      // The transaction will be closed by parent executor.
+                      Executor keyExecutor = configuration.newExecutor(executor.getTransaction(), ExecutorType.SIMPLE);
+                      //执行获得主键的sql语句
+                      List<Object> values = keyExecutor.query(keyStatement, parameter, RowBounds.DEFAULT, Executor.NO_RESULT_HANDLER);
+                      if (values.size() == 0) {
+                        throw new ExecutorException("SelectKey returned no data.");
+                      } else if (values.size() > 1) {
+                        throw new ExecutorException("SelectKey returned more than one value.");
+                      } else {
+                        //执行结果
+                        MetaObject metaResult = configuration.newMetaObject(values.get(0));
+                        //返回参数如果是一个
+                        if (keyProperties.length == 1) {
+                            //判断返回参数使用有get方法
+                          if (metaResult.hasGetter(keyProperties[0])) {
+                            setValue(metaParam, keyProperties[0], metaResult.getValue(keyProperties[0]));
+                          } else {
+                            // no getter for the property - maybe just a single value object
+                            // so try that
+                            setValue(metaParam, keyProperties[0], values.get(0));
+                          }
+                        } else {
+                          //如果有多个返回参数则需要循环赋值
+                          handleMultipleProperties(keyProperties, metaParam, metaResult);
+                        }
+                      }
+                    }
+                }
+            } catch (ExecutorException e) {
+              throw e;
+            } catch (Exception e) {
+              throw new ExecutorException("Error selecting key or setting result to parameter object. Cause: " + e, e);
+            }
+      }
+
+      //如果有多个返回参数则需要循环赋值
+      private void handleMultipleProperties(String[] keyProperties,
+          MetaObject metaParam, MetaObject metaResult) {
+            String[] keyColumns = keyStatement.getKeyColumns();
+
+            //如果没设置返回参数的值，则使用结果属性的值
+            if (keyColumns == null || keyColumns.length == 0) {
+                  // no key columns specified, just use the property names
+                  for (int i = 0; i < keyProperties.length; i++) {
+                    setValue(metaParam, keyProperties[i], metaResult.getValue(keyProperties[i]));
+                  }
+            } else {
+                  if (keyColumns.length != keyProperties.length) {
+                    throw new ExecutorException("If SelectKey has key columns, the number must match the number of key properties.");
+                  }
+                  for (int i = 0; i < keyProperties.length; i++) {
+                    setValue(metaParam, keyProperties[i], metaResult.getValue(keyColumns[i]));
+                  }
+            }
+      }
+
+      //设置返回参数对应的值
+          private void setValue(MetaObject metaParam, String property, Object value) {
+                if (metaParam.hasSetter(property)) {
+                  metaParam.setValue(property, value);
+                } else {
+                  throw new ExecutorException("No setter found for the keyProperty '" + property + "' in " + metaParam.getOriginalObject().getClass().getName                               () +   ".");
+                }
+          }
+    }
+

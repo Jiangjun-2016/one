@@ -1,0 +1,100 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+0.  上一篇博客MyBatis主键生成器KeyGenerator（一）中我们大体介绍了主键生成器的接口及配置等，
+    接下来我们介绍一下KeyGenerator的实现类Jdbc3KeyGenerator
+    Jdbc3KeyGenerator实际上实现了processAfter方法，
+    其使用方法如下配置，目的是将主键作为返回值返回，
+    这种用法只能是在有自增主键的数据库中使用：
+        <insert id="save" useGeneratedKeys="true" keyColumn="i_id" keyProperty="id">
+            insert into tbl_log (log_type,log_info) values (#{logType},#{logInfo})
+        </insert>
+
+    其实现原理就是获得数据库的记录条数，然后加1，作为返回参数的值返回，源码实现如下：
+
+    /**
+     * @author Clinton Begin
+     */
+    public class Jdbc3KeyGenerator implements KeyGenerator {
+
+      //jdbc模式只能是执行之后返回主键id
+      @Override
+      public void processBefore(Executor executor, MappedStatement ms, Statement stmt, Object parameter) {
+        // do nothing
+      }
+
+      @Override
+      public void processAfter(Executor executor, MappedStatement ms, Statement stmt, Object parameter) {
+            List<Object> parameters = new ArrayList<Object>();
+            parameters.add(parameter);
+            processBatch(ms, stmt, parameters);
+      }
+      public void processBatch(MappedStatement ms, Statement stmt, List<Object> parameters) {
+            ResultSet rs = null;
+            try {
+              rs = stmt.getGeneratedKeys();
+              final Configuration configuration = ms.getConfiguration();
+              final TypeHandlerRegistry typeHandlerRegistry = configuration.getTypeHandlerRegistry();
+              //获得返回值的参数名
+              final String[] keyProperties = ms.getKeyProperties();
+              final ResultSetMetaData rsmd = rs.getMetaData();
+              TypeHandler<?>[] typeHandlers = null;
+              if (keyProperties != null && rsmd.getColumnCount() >= keyProperties.length) {
+                for (Object parameter : parameters) {
+                  // there should be one row for each statement (also one for each parameter)
+                  if (!rs.next()) {
+                    break;
+                  }
+                  final MetaObject metaParam = configuration.newMetaObject(parameter);
+                  //获得执行之后返回值的类型
+                  if (typeHandlers == null) {
+                    typeHandlers = getTypeHandlers(typeHandlerRegistry, metaParam, keyProperties);
+                  }
+                  populateKeys(rs, metaParam, keyProperties, typeHandlers);
+                }
+              }
+            } catch (Exception e) {
+              throw new ExecutorException("Error getting generated key or setting result to parameter object. Cause: " + e, e);
+            } finally {
+              if (rs != null) {
+                try {
+                  rs.close();
+                } catch (Exception e) {
+                  // ignore
+                }
+              }
+            }
+      }
+      //设置执行sql之后返回参数对应的值
+      private TypeHandler<?>[] getTypeHandlers(TypeHandlerRegistry typeHandlerRegistry, MetaObject metaParam, String[] keyProperties) {
+            TypeHandler<?>[] typeHandlers = new TypeHandler<?>[keyProperties.length];
+            for (int i = 0; i < keyProperties.length; i++) {
+              if (metaParam.hasSetter(keyProperties[i])) {
+                Class<?> keyPropertyType = metaParam.getSetterType(keyProperties[i]);
+                TypeHandler<?> th = typeHandlerRegistry.getTypeHandler(keyPropertyType);
+                typeHandlers[i] = th;
+              }
+            }
+            return typeHandlers;
+      }
+
+      private void populateKeys(ResultSet rs, MetaObject metaParam, String[] keyProperties, TypeHandler<?>[] typeHandlers) throws SQLException {
+            for (int i = 0; i < keyProperties.length; i++) {
+              TypeHandler<?> th = typeHandlers[i];
+              if (th != null) {
+                 //获得执行后对应参数的值
+                Object value = th.getResult(rs, i + 1);
+                //设置返回参数的值
+                metaParam.setValue(keyProperties[i], value);
+              }
+            }
+      }
+
+    }

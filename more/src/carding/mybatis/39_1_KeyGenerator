@@ -1,0 +1,94 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+0.  Mybatis提供了主键生成器接口KeyGenerator，insert语句默认是不返回记录的主键值，而是返回插入的记录条数；
+    如果业务层需要得到记录的主键时，可以通过配置的方式来完成这个功能 。
+    由于不同的数据库对主键的生成不一样：
+    （1）针对Sequence主键而言，在执行insert sql前必须指定一个主键值给要插入的记录，如Oracle、DB2，KeyGenerator提供了processBefore（）方法。
+    （2）针对自增主键的表，在插入时不需要主键，而是在插入过程自动获取一个自增的主键，比如MySQL，Postgresql，KeyGenerator提供了processAfter（）方法。
+
+    KeyGenerator源码如下：
+    /**
+     * @author Clinton Begin
+     */
+    public interface KeyGenerator {
+
+      //在执行insert之前，设置属性order="BEFORE"
+      void processBefore(Executor executor, MappedStatement ms, Statement stmt, Object parameter);
+
+      //在执行insert之后，设置属性order="AFTER"
+      void processAfter(Executor executor, MappedStatement ms, Statement stmt, Object parameter);
+
+    }
+    KeyGenerator分别实现了Jdbc3KeyGenerator、SelectKeyGenerator和NoKeyGenerator，
+    其中NoKeyGenerator并没有具体的操作，不需要去关心。
+    KeyGenerator的实现类如下：
+    KeyGenerator
+        Jdbc3KeyGenerator
+        NoKeyGenerator
+        SelectKeyGenerator
+
+
+1.   主键生成器的配置方式有两种
+    （一）当数据库可以自增主键时，如mysql，可以采用如下配置：
+        <insert id="save" useGeneratedKeys="true" keyColumn="i_id" keyProperty="id">
+            insert into tbl_log (log_type,log_info) values (#{logType},#{logInfo})
+        </insert>
+
+    这样就是在返回值中带有生成数据的主键，在insert语句调用之后执行，应该是调用的是processAfter方法，并且默认使用的实现类是Jdbc3KeyGenerator，
+    它也只是实现了processAfter方法
+
+    （二）当数据库需要执行Sequence主键时，需要另外一种配置，MySQL也可以使用Sequence主键，配置如下：
+    <insert id="save">
+        <selectKey resultType="int" keyProperty="id" order="AFTER">
+             SELECT LAST_INSERT_ID() AS id
+        </selectKey>
+        insert into tbl_log (log_type,log_info) values
+            (#{logType},#{logInfo})
+    </insert>
+    通过配置我们可以看到，order=AFTER，这样是在执行完insert语句之后再获得最大id，
+    在Oracle下需要配置成oder=BEFORE了，我们可以猜到这时候使用的是SelectKeyGenerator，接下来我们会对这个两个实现类进行具体的分析。
+
+    在SimpleStatementHandler执行具体的update函数时，会进行选择执行Jdbc3KeyGenerator或者SelectKeyGenerator，或者不执行任何KeyGenerator，
+    代码如下：
+    @Override
+      public int update(Statement statement) throws SQLException {
+        String sql = boundSql.getSql();
+        Object parameterObject = boundSql.getParameterObject();
+        KeyGenerator keyGenerator = mappedStatement.getKeyGenerator();
+        int rows;
+        if (keyGenerator instanceof Jdbc3KeyGenerator) {
+          statement.execute(sql, Statement.RETURN_GENERATED_KEYS);
+          rows = statement.getUpdateCount();
+          keyGenerator.processAfter(executor, mappedStatement, statement, parameterObject);
+        } else if (keyGenerator instanceof SelectKeyGenerator) {
+          statement.execute(sql);
+          rows = statement.getUpdateCount();
+          keyGenerator.processAfter(executor, mappedStatement, statement, parameterObject);
+        } else {
+          statement.execute(sql);
+          rows = statement.getUpdateCount();
+        }
+        return rows;
+      }
+
+    在PreparedStatementHandler中执行update函数时，则使用如下方法：
+    @Override
+     public int update(Statement statement) throws SQLException {
+       PreparedStatement ps = (PreparedStatement) statement;
+       ps.execute();
+       int rows = ps.getUpdateCount();
+       Object parameterObject = boundSql.getParameterObject();
+       KeyGenerator keyGenerator = mappedStatement.getKeyGenerator();
+       keyGenerator.processAfter(executor, mappedStatement, ps, parameterObject);
+       return rows;
+     }
+
+    所以其实可以看到执行的都是processAfter方法，其实具体的调用顺序并不是的根据KeyGenerator的processBefore和processAfter来实现的。

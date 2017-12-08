@@ -1,0 +1,128 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+Prepared：事先准备好
+
+0.  MyBatis是一个支持普通SQL查询，存储过程和高级映射的优秀持久层框架。
+    MyBatis消除了几乎所有的JDBC代码和参数的手工设置以及对结果集的检索封装。
+    MyBatis可以使用简单的XML或注解用于配置和原始映射，
+    将接口和Java的POJO（Plain Old Java Objects，普通的Java对象）映射成数据库中的记录。
+
+    一、表结构准备：
+    DROP TABLE IF EXISTS `users`;
+    CREATE TABLE `users` (
+      `id` int(11) NOT NULL AUTO_INCREMENT,
+      `NAME` varchar(20) DEFAULT NULL,
+      `age` int(11) DEFAULT NULL,
+      PRIMARY KEY (`id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+    二、Mybatis配置文件mybatis-config.xml：
+    <?xml version="1.0" encoding="UTF-8"?>
+     <!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN" "http://mybatis.org/dtd/mybatis-3-config.dtd">
+     <configuration>
+
+         <environments default="development">
+             <environment id="development">
+                 <transactionManager type="JDBC" />
+                 <!-- 配置数据库连接信息 -->
+                 <dataSource type="POOLED">
+                     <property name="driver" value="com.mysql.jdbc.Driver" />
+                     <property name="url" value="jdbc:mysql://localhost:3306/mybatis" />
+                     <property name="username" value="root" />
+                     <property name="password" value="tian" />
+                 </dataSource>
+             </environment>
+         </environments>
+         <mappers>
+             <!-- 注册userMapper.xml文件-->
+             <mapper resource="com/tianjunwei/learn/learn1/mapper/UserMapper.xml"/>
+         </mappers>
+
+    </configuration>
+
+    三、与表结构对应的实体类：
+    public class User {
+
+        private int id;
+        private String name;
+        private int age;
+        public int getId() {
+            return id;
+        }
+        public void setId(int id) {
+            this.id = id;
+        }
+        public String getName() {
+            return name;
+        }
+        public void setName(String name) {
+            this.name = name;
+        }
+        public int getAge() {
+            return age;
+        }
+        public void setAge(int age) {
+            this.age = age;
+        }
+
+    }
+
+    四、SQL语句的Mapper文件
+    <?xml version="1.0" encoding="UTF-8" ?>
+     <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+     <mapper namespace="com.tianjunwei.learn.learn1.entity.User">
+         <!-- 在select标签中编写查询的SQL语句， 设置select标签的id属性为getUser，id属性值必须是唯一的，不能够重复
+                使用parameterType属性指明查询时使用的参数类型，resultType属性指明查询返回的结果集类型
+         resultType="com.tianjunwei.learn.learn1.entity.User"就表示将查询结果封装成一个User类的对象返回
+         User类就是users表所对应的实体类
+         -->
+         <!--根据id查询得到一个user对象-->
+         <select id="getUser" parameterType="int" resultType="com.tianjunwei.learn.learn1.entity.User">
+             select * from users where id=#{id}
+         </select>
+     </mapper>
+
+    五、Main函数及运行结果：
+    package com.tianjunwei.learn.learn1;
+
+    import java.io.InputStream;
+    import java.util.HashMap;
+    import java.util.Map;
+
+    import org.apache.ibatis.session.SqlSession;
+    import org.apache.ibatis.session.SqlSessionFactory;
+    import org.apache.ibatis.session.SqlSessionFactoryBuilder;
+
+    import com.tianjunwei.learn.learn1.entity.User;
+
+    public class Learn1Main {
+
+        public static void main(String [] args){
+
+            //mybatis的配置文件
+            String resource = "learn/mybatis-config.xml";
+            //使用类加载器加载mybatis的配置文件（它也加载关联的映射文件）
+            InputStream is = Learn1Main.class.getClassLoader().getResourceAsStream(resource);
+            //构建sqlSession的工厂
+            SqlSessionFactory sessionFactory = new SqlSessionFactoryBuilder().build(is);
+            //使用MyBatis提供的Resources类加载mybatis的配置文件（它也加载关联的映射文件）
+            //Reader reader = Resources.getResourceAsReader(resource);
+            //构建sqlSession的工厂
+            //SqlSessionFactory sessionFactory = new SqlSessionFactoryBuilder().build(reader);
+            //创建能执行映射文件中sql的sqlSession
+            SqlSession session = sessionFactory.openSession();
+
+            String statement = "com.tianjunwei.learn.learn1.entity.User.getUser";//映射sql的标识字符串
+            //执行查询返回一个唯一user对象的sql
+            User user = session.selectOne(statement, 1);
+            System.out.println(user.getName);
+
+        }
+    }

@@ -1,0 +1,79 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+
+0.  SimpleStatementHandler就是使用基本的Statement来执行query、batch、update等操作，其实现还是比较简单的，
+    当然在执行过程中会涉及keyGenerator和ResultHandler操作，这些我们会在接下来的博客中进行详解。
+    SimpleStatementHandler用于执行简单的sql语句，这里简单的sql语句是指sql语句中没有变量，不会通过外部进行参数传入的sql语句。
+    源码如下：
+    /**
+     * @author Clinton Begin
+     */
+    public class SimpleStatementHandler extends BaseStatementHandler {
+
+      public SimpleStatementHandler(Executor executor, MappedStatement mappedStatement, Object parameter, RowBounds rowBounds, ResultHandler resultHandler,                 BoundSql boundSql) {
+        super(executor, mappedStatement, parameter, rowBounds, resultHandler, boundSql);
+      }
+
+      @Override
+      public int update(Statement statement) throws SQLException {
+        //获得sql语句
+        String sql = boundSql.getSql();
+        //获得参数
+        Object parameterObject = boundSql.getParameterObject();
+        KeyGenerator keyGenerator = mappedStatement.getKeyGenerator();
+        int rows;
+        //statement执行sql语句返回更新数目
+        if (keyGenerator instanceof Jdbc3KeyGenerator) {
+          statement.execute(sql, Statement.RETURN_GENERATED_KEYS);
+          rows = statement.getUpdateCount();
+          keyGenerator.processAfter(executor, mappedStatement, statement, parameterObject);
+        } else if (keyGenerator instanceof SelectKeyGenerator) {
+          statement.execute(sql);
+          rows = statement.getUpdateCount();
+          keyGenerator.processAfter(executor, mappedStatement, statement, parameterObject);
+        } else {
+          //如果没有keyGenerator，直接调用Statement.execute和Statement.getUpdateCount
+          statement.execute(sql);
+          rows = statement.getUpdateCount();
+        }
+        return rows;
+      }
+
+      @Override
+      public void batch(Statement statement) throws SQLException {
+        //批处理
+        String sql = boundSql.getSql();
+        statement.addBatch(sql);
+      }
+
+      //ResultHandler resultHandler这个参数好像没用啊
+      @Override
+      public <E> List<E> query(Statement statement, ResultHandler resultHandler) throws SQLException {
+        String sql = boundSql.getSql();
+        //statement执行sql语句
+        statement.execute(sql);
+        return resultSetHandler.<E>handleResultSets(statement);
+      }
+
+      //实例化Statement
+      @Override
+      protected Statement instantiateStatement(Connection connection) throws SQLException {
+        if (mappedStatement.getResultSetType() != null) {
+          return connection.createStatement(mappedStatement.getResultSetType().getValue(), ResultSet.CONCUR_READ_ONLY);
+        } else {
+          return connection.createStatement();
+        }
+      }
+
+      @Override
+      public void parameterize(Statement statement) throws SQLException {
+        // N/A
+      }
+
+    }

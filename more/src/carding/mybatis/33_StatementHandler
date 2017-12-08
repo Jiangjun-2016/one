@@ -1,0 +1,53 @@
+转载（http://blog.csdn.net/qq924862077/）
+Executor：执行
+Statement:声明
+Handler：处理程序
+wrapper:包装
+Mapper:制图
+Invocation:调用
+Resuse:重用
+
+0.  StatementHandler通过类名我们可以了解到它可能是Statement的处理器，它是一个接口，其实现类如下：
+    StatementHandler
+        BaseStatementHandler
+            CallableStatementHandler
+            PrepareStatementHandler
+            SimpleStatementHandler
+        RoutigStatementHandler
+
+1.  BaseStatementHandler：一个抽象类，只是实现了一些不涉及具体操作的方法
+    RoutingStatementHandler：类似路由器，根据配置文件来路由选择具体实现类SimpleStatementHandler、CallableStatementHandler和PreparedStatementHandler
+    SimpleStatementHandler：就是直接使用普通的Statement对象，这样每次执行SQL语句都需要数据库对SQL进行预编译
+    PrepareStatementHandler：使用PrepareStatement执行，虽然初次创建PrepareStatement时开销比较大，但在多次处理SQL时只需要初始化一次，可以有效提高性能
+    CallableStatementHandler：使用CallableStatement执行，CallableStatement是用来执行存储过程的。
+
+    选择不同StatementHandler的配置如下：通过根据不同的操作配置不同的StatementHandler来进行处理
+    <insert id="save"  statementType="STATEMENT"><!-- STATEMENT,PREPARED 或CALLABLE -->
+
+    源码如下：
+    /**
+     * @author Clinton Begin
+     */
+    public interface StatementHandler {
+
+      //获取Statement
+      Statement prepare(Connection connection)
+          throws SQLException;
+      //设置参数
+      void parameterize(Statement statement)
+          throws SQLException;
+      //批量处理
+      void batch(Statement statement)
+          throws SQLException;
+      //更新处理
+      int update(Statement statement)
+          throws SQLException;
+      //查找处理
+      <E> List<E> query(Statement statement, ResultHandler resultHandler)
+          throws SQLException;
+      //获得BoundSql
+      BoundSql getBoundSql();
+      //获得ParameterHandler
+      ParameterHandler getParameterHandler();
+
+    }
