@@ -1,0 +1,301 @@
+转载：
+
+Security ：安全
+Concurrency ：并发
+Facade：外观
+Authenticator：验证器
+credentials：凭据
+principals：负责人
+Authorizer：授权人
+Realm: 域
+permission ：许可
+primary concerns：主要关注问题
+supporting features：支持的功能
+Principal:主要的
+delegation:授权
+
+1. Shiro与web
+   与spring集成：在Web.xml中
+
+   <filter>
+       <filter-name>shiroFilter</filter-name>
+       <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+       <init-param>
+           <param-name>targetFilterLifecycle</param-name>
+           <param-value>true</param-value>
+       </init-param>
+   </filter>
+   <filter-mapping>
+        <filter-name>shiroFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+   </filter-mapping>
+
+   DelegatingFilterProxy作用是自动到spring容器查找名字为shiroFilter（filter-name）的bean并把所有Filter的操作委托给它。然后将ShiroFilter配置到spring容器即可：
+
+   Shiro集成spring
+   <!-- 缓存管理器 使用Ehcache实现 -->
+   <bean id="cacheManager" class="org.apache.shiro.cache.ehcache.EhCacheManager">
+       <property name="cacheManagerConfigFile" value="classpath:ehcache.xml"/>
+   </bean>
+
+        <!-- 凭证匹配器 -->
+        <bean id="credentialsMatcher" class="
+            com.github.zhangkaitao.shiro.chapter12.credentials.RetryLimitHashedCredentialsMatcher">
+                <constructor-arg ref="cacheManager"/>
+   10.          <property name="hashAlgorithmName" value="md5"/>
+   11.          <property name="hashIterations" value="2"/>
+   12.          <property name="storedCredentialsHexEncoded" value="true"/>
+   13. </bean>
+
+   14.
+   15. <!-- Realm实现 -->
+
+   16. <bean id="userRealm" class="com.github.zhangkaitao.shiro.chapter12.realm.UserRealm">
+
+   17.     <property name="userService" ref="userService"/>
+   18.     <property name="credentialsMatcher" ref="credentialsMatcher"/>
+   19.     <property name="cachingEnabled" value="true"/>
+   20.     <property name="authenticationCachingEnabled" value="true"/>
+   21.     <property name="authenticationCacheName" value="authenticationCache"/>
+   22.     <property name="authorizationCachingEnabled" value="true"/>
+   23.     <property name="authorizationCacheName" value="authorizationCache"/>
+   24. </bean>
+
+   25. <!-- 会话ID生成器 -->
+
+   26. <bean id="sessionIdGenerator"
+
+   27. class="org.apache.shiro.session.mgt.eis.JavaUuidSessionIdGenerator"/>
+
+   28. <!-- 会话DAO -->
+
+   29. <bean id="sessionDAO"
+
+   30. class="org.apache.shiro.session.mgt.eis.EnterpriseCacheSessionDAO">
+
+   31.     <property name="activeSessionsCacheName" value="shiro-activeSessionCache"/>
+   32.     <property name="sessionIdGenerator" ref="sessionIdGenerator"/>
+   33. </bean>
+
+   34. <!-- 会话验证调度器 -->
+
+   35. <bean id="sessionValidationScheduler"
+
+   36. class="org.apache.shiro.session.mgt.quartz.QuartzSessionValidationScheduler">
+
+   37.     <property name="sessionValidationInterval" value="1800000"/>
+   38.     <property name="sessionManager" ref="sessionManager"/>
+   39. </bean>
+
+   40. <!-- 会话管理器 -->
+
+   41. <bean id="sessionManager" class="org.apache.shiro.session.mgt.DefaultSessionManager">
+
+   42.     <property name="globalSessionTimeout" value="1800000"/>
+   43.     <property name="deleteInvalidSessions" value="true"/>
+   44.     <property name="sessionValidationSchedulerEnabled" value="true"/>
+   45.    <property name="sessionValidationScheduler" ref="sessionValidationScheduler"/>
+   46.     <property name="sessionDAO" ref="sessionDAO"/>
+   47. </bean>
+
+   48. <!-- 安全管理器 -->
+
+   49. <bean id="securityManager" class="org.apache.shiro.mgt.DefaultSecurityManager">
+
+   50.     <property name="realms">
+   51.         <list><ref bean="userRealm"/></list>
+   52.     </property>
+   53.     <property name="sessionManager" ref="sessionManager"/>
+   54.     <property name="cacheManager" ref="cacheManager"/>
+   55. </bean>
+
+   56. <!-- 相当于调用SecurityUtils.setSecurityManager(securityManager) -->
+
+   57. <bean class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+
+   58. <property name="staticMethod"
+
+   59. value="org.apache.shiro.SecurityUtils.setSecurityManager"/>
+
+   60.     <property name="arguments" ref="securityManager"/>
+   61. </bean>
+
+   62. <!-- Shiro生命周期处理器-->
+
+   63. <bean id="lifecycleBeanPostProcessor"
+
+   64. class="org.apache.shiro.spring.LifecycleBeanPostProcessor"/>
+
+   可以看出，只要把之前的ini配置翻译为此处的spring xml配置方式即可，无须多解释。
+   LifecycleBeanPostProcessor用于在实现了Initializable接口的Shiro bean初始化时调用Initializable接口回调，
+   在实现了Destroyable接口的Shiro bean销毁时调用 Destroyable接口回调。
+   如UserRealm就实现了Initializable，而DefaultSecurityManager实现了Destroyable。具体可以查看它们的继承关系。
+
+***************************************************************************************************************
+
+    Web应用：
+
+    Web应用和普通JavaSE应用的某些配置是类似的，此处只提供一些不一样的配置，详细配置可以参考spring-shiro-web.xml。
+
+    <!-- 会话Cookie模板 -->
+    <bean id="sessionIdCookie" class="org.apache.shiro.web.servlet.SimpleCookie">
+        <constructor-arg value="sid"/>
+        <property name="httpOnly" value="true"/>
+        <property name="maxAge" value="180000"/>
+    </bean>
+        <!-- 会话管理器 -->
+        <bean id="sessionManager"
+        class="org.apache.shiro.web.session.mgt.DefaultWebSessionManager">
+    10.     <property name="globalSessionTimeout" value="1800000"/>
+    11.     <property name="deleteInvalidSessions" value="true"/>
+    12.     <property name="sessionValidationSchedulerEnabled" value="true"/>
+    13.     <property name="sessionValidationScheduler" ref="sessionValidationScheduler"/>
+    14.     <property name="sessionDAO" ref="sessionDAO"/>
+    15.     <property name="sessionIdCookieEnabled" value="true"/>
+    16.     <property name="sessionIdCookie" ref="sessionIdCookie"/>
+    17. </bean>
+
+    18. <!-- 安全管理器 -->
+
+    19. <bean id="securityManager" class="org.apache.shiro.web.mgt.DefaultWebSecurityManager">
+
+    20. <property name="realm" ref="userRealm"/>
+
+    21.     <property name="sessionManager" ref="sessionManager"/>
+    22.     <property name="cacheManager" ref="cacheManager"/>
+    23. </bean>
+
+
+    1、sessionIdCookie是用于生产Session ID Cookie的模板；
+
+    2、会话管理器使用用于web环境的DefaultWebSessionManager；
+
+    3、安全管理器使用用于web环境的DefaultWebSecurityManager。
+
+
+
+    <!-- 基于Form表单的身份验证过滤器 -->
+    <bean id="formAuthenticationFilter"
+    class="org.apache.shiro.web.filter.authc.FormAuthenticationFilter">
+        <property name="usernameParam" value="username"/>
+        <property name="passwordParam" value="password"/>
+        <property name="loginUrl" value="/login.jsp"/>
+    </bean>
+    <!-- Shiro的Web过滤器 -->
+    <bean id="shiroFilter" class="org.apache.shiro.spring.web.ShiroFilterFactoryBean">
+    10.     <property name="securityManager" ref="securityManager"/>
+    11.     <property name="loginUrl" value="/login.jsp"/>
+    12.     <property name="unauthorizedUrl" value="/unauthorized.jsp"/>
+    13.     <property name="filters">
+    14.         <util:map>
+    15.             <entry key="authc" value-ref="formAuthenticationFilter"/>
+    16.         </util:map>
+    17.     </property>
+    18.     <property name="filterChainDefinitions">
+    19.         <value>
+    20.             /index.jsp = anon
+    21.             /unauthorized.jsp = anon
+    22.             /login.jsp = authc
+    23.             /logout = logout
+    24.             /** = user
+    25.         </value>
+    26.     </property>
+    27. </bean>
+
+
+
+    1、formAuthenticationFilter为基于Form表单的身份验证过滤器；此处可以再添加自己的Filter bean定义；
+
+    2、shiroFilter：此处使用ShiroFilterFactoryBean来创建ShiroFilter过滤器；filters属性用于定义自己的过滤器，即ini配置中的[filters]部分；filterChainDefinitions用于声明url和filter的关系，即ini配置中的[urls]部分。
+
+    Shiro权限注解
+    注意:
+
+    在spring中需要开启权限注解与aop:
+
+    <!-- AOP式方法级权限检查  -->
+    <bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator"
+          depends-on="lifecycleBeanPostProcessor"/>
+
+    <!-- 启用shrio授权注解拦截方式 -->
+    <bean class="org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor">
+        <property name="securityManager" ref="securityManager"/>
+    </bean>
+
+
+
+
+
+    Shiro提供了相应的注解用于权限控制，如果使用这些注解就需要使用AOP的功能来进行判断，如Spring AOP；Shiro提供了Spring AOP集成用于权限注解的解析和验证。
+
+    为了测试，此处使用了Spring MVC来测试Shiro注解，当然Shiro注解不仅仅可以在web环境使用，在独立的JavaSE中也是可以用的，此处只是以web为例了。
+
+
+
+    在spring-mvc.xml配置文件添加Shiro Spring AOP权限注解的支持：
+
+    <aop:config proxy-target-class="true"></aop:config>
+    <bean class="
+    org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor">
+        <property name="securityManager" ref="securityManager"/>
+    </bean>
+    如上配置用于开启Shiro Spring AOP权限注解的支持；<aop:config proxy-target-class="true">表示代理类。
+
+
+
+    接着就可以在相应的控制器（AnnotationController）中使用如下方式进行注解：
+
+    @RequiresRoles("admin")
+    @RequestMapping("/hello2")
+    public String hello2() {
+        return "success";
+    }
+    访问hello2方法的前提是当前用户有admin角色。
+
+
+
+    当验证失败，其会抛出UnauthorizedException异常，此时可以使用Spring的ExceptionHandler（DefaultExceptionHandler）来进行拦截处理：
+
+    @ExceptionHandler({UnauthorizedException.class})
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public ModelAndView processUnauthenticatedException(NativeWebRequest request, UnauthorizedException e) {
+        ModelAndView mv = new ModelAndView();
+        mv.addObject("exception", e);
+        mv.setViewName("unauthorized");
+        return mv;
+    }
+    权限注解
+
+    Java代码
+
+    @RequiresAuthentication
+    表示当前Subject已经通过login进行了身份验证；即Subject. isAuthenticated()返回true。
+
+
+
+    Java代码
+
+    @RequiresUser
+    表示当前Subject已经身份验证或者通过记住我登录的。
+
+
+
+    Java代码
+
+    @RequiresGuest
+    表示当前Subject没有身份验证或通过记住我登录过，即是游客身份。
+
+
+
+    Java代码
+
+    @RequiresRoles(value={“admin”, “user”}, logical= Logical.AND)
+    表示当前Subject需要角色admin和user。
+
+
+
+    Java代码
+
+    @RequiresPermissions (value={“user:a”, “user:b”}, logical= Logical.OR)
+    表示当前Subject需要权限user:a或user:b。
+
