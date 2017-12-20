@@ -1,0 +1,17 @@
+转载：
+
+Security ：安全
+Concurrency ：并发
+Facade：外观
+Authenticator：验证器
+credentials：凭据
+principals：负责人
+Authorizer：授权人
+Realm: 域
+permission ：许可
+primary concerns：主要关注问题
+supporting features：支持的功能
+Principal:主要的
+delegation:授权
+
+1. 

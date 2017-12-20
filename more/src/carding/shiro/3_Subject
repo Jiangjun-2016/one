@@ -1,0 +1,105 @@
+转载：
+
+Security ：安全
+Concurrency ：并发
+Facade：外观
+Authenticator：验证器
+credentials：凭据
+principals：负责人
+Authorizer：授权人
+Realm: 域
+permission ：许可
+primary concerns：主要关注问题
+supporting features：支持的功能
+Principal:主要的
+delegation:授权
+
+1.  Subject
+    Subject是Shiro的核心对象，基本所有身份验证、授权都是通过Subject完成。
+
+    1、身份信息获取
+    Java代码
+    Object getPrincipal(); //Primary Principal
+    PrincipalCollection getPrincipals(); // PrincipalCollection
+
+    2、身份验证
+    Java代码
+    void login(AuthenticationToken token) throws AuthenticationException;
+    boolean isAuthenticated();
+    boolean isRemembered();
+    通过login登录，如果登录失败将抛出相应的AuthenticationException，如果登录成功调用isAuthenticated就会返回true，即已经通过身份验证；如果isRemembered返回true，表示是通过记住我功能登录的而不是调用login方法登录的。isAuthenticated/isRemembered是互斥的，即如果其中一个返回true，另一个返回false。
+
+    3、角色授权验证
+    Java代码
+    boolean hasRole(String roleIdentifier);
+    boolean[] hasRoles(List<String> roleIdentifiers);
+    boolean hasAllRoles(Collection<String> roleIdentifiers);
+    void checkRole(String roleIdentifier) throws AuthorizationException;
+    void checkRoles(Collection<String> roleIdentifiers) throws AuthorizationException;
+    void checkRoles(String... roleIdentifiers) throws AuthorizationException;
+    hasRole*进行角色验证，验证后返回true/false；而checkRole*验证失败时抛出AuthorizationException异常。
+
+    4、权限授权验证
+    Java代码
+    boolean isPermitted(String permission);
+    boolean isPermitted(Permission permission);
+    boolean[] isPermitted(String... permissions);
+    boolean[] isPermitted(List<Permission> permissions);
+    boolean isPermittedAll(String... permissions);
+    boolean isPermittedAll(Collection<Permission> permissions);
+    void checkPermission(String permission) throws AuthorizationException;
+    void checkPermission(Permission permission) throws AuthorizationException;
+    void checkPermissions(String... permissions) throws AuthorizationException;
+    void checkPermissions(Collection<Permission> permissions) throws AuthorizationException;
+
+    isPermitted*进行权限验证，验证后返回true/false；而checkPermission*验证失败时抛出AuthorizationException。
+
+    5、会话
+    Java代码
+    Session getSession(); //相当于getSession(true)
+    Session getSession(boolean create);
+    类似于Web中的会话。如果登录成功就相当于建立了会话，接着可以使用getSession获取；如果create=false如果没有会话将返回null，而create=true如果没有会话会强制创建一个。
+
+    6、退出
+    Java代码
+    void logout();
+
+    7、RunAs
+    Java代码
+    void runAs(PrincipalCollection principals) throws NullPointerException, IllegalStateException;
+    boolean isRunAs();
+    PrincipalCollection getPreviousPrincipals();
+    PrincipalCollection releaseRunAs();
+    RunAs即实现“允许A假设为B身份进行访问”；通过调用subject.runAs(b)进行访问；接着调用subject.getPrincipals将获取到B的身份；此时调用isRunAs将返回true；而a的身份需要通过subject. getPreviousPrincipals获取；如果不需要RunAs了调用subject. releaseRunAs即可。
+
+    8、多线程
+    Java代码
+    <V> V execute(Callable<V> callable) throws ExecutionException;
+    void execute(Runnable runnable);
+    <V> Callable<V> associateWith(Callable<V> callable);
+    Runnable associateWith(Runnable runnable);
+    实现线程之间的Subject传播，因为Subject是线程绑定的；因此在多线程执行中需要传播到相应的线程才能获取到相应的Subject。
+    最简单的办法就是通过execute(runnable/callable实例)直接调用；或者通过associateWith(runnable/callable实例)得到一个包装后的实例；
+    它们都是通过：
+    1、把当前线程的Subject绑定过去；
+    2、在线程执行结束后自动释放。
+
+    Subject自己不会实现相应的身份验证/授权逻辑，而是通过DelegatingSubject委托给SecurityManager实现；及可以理解为Subject是一个面门。
+
+    对于Subject的构建一般没必要我们去创建；一般通过SecurityUtils.getSubject()获取：
+    Java代码
+    public static Subject getSubject() {
+        Subject subject = ThreadContext.getSubject();
+        if (subject == null) {
+            subject = (new Subject.Builder()).buildSubject();
+            ThreadContext.bind(subject);
+        }
+        return subject;
+    }
+    即首先查看当前线程是否绑定了Subject，如果没有通过Subject.Builder构建一个然后绑定到现场返回。
+
+    如果想自定义创建，可以通过：
+    Java代码
+    new Subject.Builder().principals(身份).authenticated(true/false).buildSubject()
+    这种可以创建相应的Subject实例了，然后自己绑定到线程即可。在new Builder()时如果没有传入SecurityManager，自动调用SecurityUtils.getSecurityManager获取；也可以自己传入一个实例。
+
