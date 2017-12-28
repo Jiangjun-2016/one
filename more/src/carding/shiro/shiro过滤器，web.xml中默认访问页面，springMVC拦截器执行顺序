@@ -1,0 +1,85 @@
+转载：http://blog.csdn.net/tyoukai_/article/details/78480359
+
+    1，环境
+    在我自己的一个在web项目使用了shiro的Filter，让shiroFilter来代理整个web的FiltershiroFilter的大致配置如下：
+
+        <bean id="shiroFilter" class="org.apache.shiro.spring.web.ShiroFilterFactoryBean">
+          <property name="securityManager" ref="securityManager" />
+          <property name="loginUrl" value="/" /><!-- 访问需要认证的地址时，没有认证跳转的地址，默认为login.jsp -->
+          <property name="unauthorizedUrl" value="homePage" /> <!-- 登录后，没有访问权限将跳转到homePage -->
+          <property name="filterChainDefinitions">
+          <!-- **表示匹配0个或多个路径 ,*表示匹配0个或多个字符串，?表示匹配一个字符 -->
+            <value>
+              /preLogin                =     anon
+              /toLogin                 =     anon
+              /userregister            =     anon
+              /registerpage            =     anon
+              /static/**               =     anon
+              /login                   =     anon
+              /logout                  =     logout
+              /analysis/test           =     authc
+              /analysis/test1          =     authc,perms[admin:edit] <!--要有 admin:edit的权限 -->
+              /**                      =     user  <!-- 主要针对rememberMe功能 ,当使用authc时，还是要认证才能访问 -->
+            </value>
+          </property>
+        </bean>
+
+    在web.xml中shiroFilter的配置如下：
+    <filter>
+        <filter-name>shiroFilter</filter-name>
+        <!-- DelegatingFilterProxy作用是自动到spring容器查找名字
+                为shiroFilter（filter-name）的bean并把所有Filter的操作委托给它 -->
+        <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+      </filter>
+      <filter-mapping>
+        <filter-name>shiroFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+      </filter-mapping>
+    配置的Filter管理所有的访问控制。
+
+    同时在项目中还在web.xml中指定了一个项目欢迎页面。代码如下：
+      <welcome-file-list>
+        <welcome-file>index.jsp</welcome-file>
+      </welcome-file-list>
+    而在欢迎页面是一个jsp的跳转标签，用来跳转到真正项目的首页。index.jsp如下：
+    <%@ page language="java" import="java.util.*" pageEncoding="UTF-8"%>
+    <jsp:forward page="/preLogin" />
+    这里跳转的preLogin就是项目真正的首页。
+
+    同时在springMVC中也配置了相关拦截器用来判断用户是否登录，若未登录则跳转到登录界面。拦截代码如下：
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
+                Object handler) throws Exception {
+            String urlPath = request.getRequestURL().toString();
+            if(urlPath.matches(Const.StaticPath)) { //访问的url是静态资源
+                return true;
+            } else { //访问其他的非静态资源的url,当前仅判断用户是否登录，若未登录则跳转到登录界面
+                User user = (User)sessionUtil.getSessionAttribute(Const.currentUser);
+                if(user != null) { //用户已登录
+                    return true;
+                } else { //用户未登录
+                    response.sendRedirect(request.getContextPath() + Const.Login);
+                    return false;
+                }
+            }
+            //return true;
+        }
+    因为刚开始学习shiro所以这几个拦截访问混在一起就搞不清楚谁先访问谁后访问，以及shiro判定访问权限后再如何跳转。
+
+    2，探索过程
+     web的过滤器与springMVC拦截器的访问顺序参考http://blog.csdn.net/chenleixing/article/details/44573495。
+        通过这篇博客可以知道过滤器Filter的优先级是要大于springMVC的拦截器Interceptor的。或者说，当有访问来到时，是先执行Filter里的逻辑，然后在执行Interceptor的。而shiro的Filter会代理web的Filter，所以会先执行shiro的过滤器在执行springMVC的拦截器。在给程序打断点，F6一步一步执行的过程中也可以发现这一点。
+         那么在web.xml中设置的欢迎页面与shiroFilter谁会先执行呢？
+    再回答这个问题的时候，要先看看我写的shiroFilter的配置。
+    <property name="loginUrl" value="/" /><!-- 访问需要认证的地址时，没有认证跳转的地址，默认为login.jsp -->
+    <property name="unauthorizedUrl" value="homePage" /> <!-- 登录后，没有访问权限将跳转到homePage -->
+
+    用户没有认证时（即没有执行subject.login()方法）若有权限的限制，会到转到根目录即index.jsp页面，而index.jsp页面又会马上跳转到preLogin页面。
+    当我在页面上输入http://localhost:8080/spiderAndAnalysis/（即：访问项目的根目录/时）我就搞不清楚到底是通过Filter访问的preLogin页面还是直接先访问的index.jsp页面未经过Filter。所以后来我将< property name=”loginUrl” value=”/” />的value换成了analysis，再次访问项目根目录，发现这次直接跳转到了analysis页面。
+    所以shiroFilter的优先级高于欢迎界面，即在配置了shiroFilter管理web访问时，所有请求都要先经过shiroFilter，再经过其他过滤器拦截器等。
+
+    3，shiroFilter部分参数的含义
+         在配置shiroFilter的时候用到了loginUrl，unauthorizedUrl以及filterChainDefinitions等参数。个人理解的配置含义：
+        loginUrl：当用户未认证（即：未执行subject.login()函数登录成功），若此时访问有访问权限的url时，会跳转到loginUrl指定的登录界面，若访问无权限的url则会直接访问。
+    以本文的配置为例：若直接访问preLogin ，toLogin ，userregister这类没有访问权限的url时，将直接访问，不用跳转。若访问analysis/test这个url，并且用户未登录时，将跳转到loginUrl指定的登录界面。
+        unauthorizedUrl：当用户认证了，访问了没有权限访问的url时会跳转到unauthorizedUrl指定的地址。例如：用户A已经登录但是用户A只有admin:add权限时，用户A访问analysis/test1这个需要admin:edit权限的url时，将跳转到unauthorizedUrl指定的homePage地址。
+
