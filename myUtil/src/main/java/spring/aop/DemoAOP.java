@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 /**
  * @author fxf
  * @create 2018-06-20 10:43
+ * 手动编写AOP，用来切入具体方法，执行相应逻辑
  **/
 @Component
 @Aspect

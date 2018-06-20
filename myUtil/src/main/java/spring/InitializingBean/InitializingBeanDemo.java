@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 /**
  * @author fxf
  * @create 2018-05-15 9:46
+ * 容器加载完成后可以执行的方法
  **/
 @Component
 public class InitializingBeanDemo implements InitializingBean {
