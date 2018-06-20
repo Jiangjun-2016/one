@@ -6,6 +6,7 @@ import java.util.concurrent.Executors;
 /**
  * @author fxf
  * @create 2018-06-20 11:05
+ * 线程池的使用
  **/
 
 public class ExecutorServiceDemo {
@@ -40,7 +41,7 @@ public class ExecutorServiceDemo {
 					try {
 						Thread.currentThread();
 						Thread.sleep(1000);
-						System.out.println("主Thread"+Thread.currentThread().hashCode());
+						System.out.println("主Thread" + Thread.currentThread().hashCode());
 						// 可缓存线程池，如果线程池长度超过处理需要，可灵活回收空闲线程，若无可回收，则新建线程
 						ExecutorService cachedThreadPool = Executors
 								.newCachedThreadPool();
@@ -49,7 +50,7 @@ public class ExecutorServiceDemo {
 							public void run() {
 								// 开始执行Service方法 或  业务逻辑
 								System.out.println("cachedThreadPool");
-								System.out.println("cachedThreadPool"+Thread.currentThread().hashCode());
+								System.out.println("cachedThreadPool" + Thread.currentThread().hashCode());
 							}
 						});
 					} catch (InterruptedException e) {
