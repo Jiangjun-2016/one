@@ -23,7 +23,6 @@ public class ExecutorServiceDemo {
 		// 	} catch (InterruptedException e) {
 		// 		e.printStackTrace();
 		// 	}
-		//
 		// 	cachedThreadPool.execute(new Runnable() {
 		// 		public void run() {
 		// 			System.out.println(index);
